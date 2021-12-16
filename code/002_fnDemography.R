@@ -14,6 +14,7 @@
 
 #' Calculate growth rate based on size 
 #' \code{Tom's code}
+#' NOTE: This is not GROWTH, per se, but TRANSITION PROBABILITY
 #'
 #' @param size Vector of holdfast diameters (lower bound for each class)
 #' @param growthRateM Mean daily growth rate (m)
@@ -28,6 +29,7 @@ growSize <- function(size, growthRateM, growthRateS) {
 
 #' Calculate growth rate based on density
 #' \code{Tom's code}
+#' NOTE: This is not GROWTH, per se, but TRANSITION PROBABILITY
 #'
 #' @param propOccupiedSpace Proportion of canopy area occupied (interactType ==
 #'   Symmetric: all plants; interactType == Asymmetric: only larger plants)
@@ -38,7 +40,7 @@ growSize <- function(size, growthRateM, growthRateS) {
 #' @return
 #' 
 growDens <- function(propOccupiedSpace, g0, g1, sizeClass) {
-  max(0, g0[sizeClass] * (1 - propOccupiedSpace / g1))
+  pmax(0, g0[sizeClass] * (1 - propOccupiedSpace / g1))
 }
 
 
@@ -64,7 +66,7 @@ growDens <- function(propOccupiedSpace, g0, g1, sizeClass) {
 #' @return
 #' 
 mortLinDens <- function(propOccupiedSpace, mu0, mu1) {
-  max(0, mu0 + mu1 * propOccupiedSpace)
+  pmax(0, mu0 + mu1 * propOccupiedSpace)
 }
 
 
@@ -79,7 +81,7 @@ mortLinDens <- function(propOccupiedSpace, mu0, mu1) {
 #' @return
 #' 
 mortOptDens <- function(propOccupiedSpace, mu0, mu1) {
-  max(0, mu0 + mu1 * (1 - 4 * (propOccupiedSpace - 0.5) ^ 2))
+  pmax(0, mu0 + mu1 * (1 - 4 * (propOccupiedSpace - 0.5) ^ 2))
 }
 
 
@@ -97,9 +99,9 @@ mortOptDens <- function(propOccupiedSpace, mu0, mu1) {
 #' 
 mortDens <- function(propOccupiedSpace, mu0, mu1, linear) {
   if(linear==TRUE) {
-    max(0, mu0 + mu1 * propOccupiedSpace)
+    pmax(0, mu0 + mu1 * propOccupiedSpace)
   } else {
-    max(0, mu0 + mu1*(1 - 4*(propOccupiedSpace - 0.5)^2))
+    pmax(0, mu0 + mu1*(1 - 4*(propOccupiedSpace - 0.5)^2))
   }
 }
 

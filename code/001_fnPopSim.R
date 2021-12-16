@@ -92,9 +92,12 @@ runMatrixModelFiner <- function(inputs){
     plot(classSizes, growthRateM, type="l",
          main="", xlab='Holdfast diameter (m)', ylab="Growth rate (m/day)",
          ylim=c(0, growthRateM[1]))
-    plot(xrange, growthDensExample, type="l",
-         main="", xlab='Proportion canopy filled', ylab="Growth rate (class 1)",
-         ylim=c(0, 1))
+    plot(NA, NA, 
+         main="", xlab='Proportion canopy filled', ylab="Growth rate",
+         xlim=c(0, 1), ylim=c(0, .1))
+    for(i in 1:NsizeClasses) {
+      lines(xrange, sapply(xrange, growDens, g0[i], g1, 1), col=i)
+    }
     if(inputs$mortalityLinearDecline) {
       plot(xrange, mortLinearExample ,type="l",
            main="", xlab='Proportion canopy filled', ylab="Mortality rate",
@@ -113,6 +116,8 @@ runMatrixModelFiner <- function(inputs){
   AreaHoldfast <- matrix(0, ncol=Ntimesteps, nrow=NsizeClasses)
   AreaCanopy <- matrix(0, ncol=Ntimesteps, nrow=NsizeClasses)
   yield <- array(0, dim=Ntimesteps)
+  
+  A.ar <- array(0, dim=c(NsizeClasses, NsizeClasses, Ntimesteps))
   
   for (step in 1:(Ntimesteps-1)) {     
     
@@ -133,17 +138,17 @@ runMatrixModelFiner <- function(inputs){
                                 inputs$mortalityLinearDecline)
       
       # Sub-diagonal entries: proportion that move to next class
-      A[i+1,i] <- max(0, 
-                      growDens(propOccupiedSpace, g0, g1, i)*(1 - mortalityRate))
+      A[i+1,i] <- growDens(propOccupiedSpace, g0, g1, i)*(1 - mortalityRate)
       # Diagonal entries: proportion that stay in the same size class
       A[i,i] <- max(0, 1 - mortalityRate - A[i+1,i])
     }
     # Canopy (last stage) mortality
     A[NsizeClasses,NsizeClasses] <- max(0, 1 - mu0)
+    A.ar[,,step] <- A
     
     Nt[,step+1]  <- A %*% Nt[,step] # Apply mortality and development
     
-    Ft <- max(domainArea - sum(AreaHoldfast[,step]), 0) # Calculate free space
+    Ft <- max(0, domainArea - sum(AreaHoldfast[,step])) # Calculate free space
     
     # Number of new recruits - assumed independent of population at present
     Nt[1,step+1] <- Nt[1,step+1] + settle*Ft
