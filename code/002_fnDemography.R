@@ -7,6 +7,53 @@
 
 
 
+
+####----------------------------------------------------------------------------
+# Allometry
+####----------------------------------------------------------------------------
+
+
+#' Convert between 1D metrics of kelp size 
+#'
+#' @param orig Vector of original measurements
+#' @param beta_mn Mean intercept + slope(s) for species
+#' @param shape Shape of allometric relationship ("linear", "quadratic", "exponential", "log")
+#' @param resid_err Residual standard deviation among individuals (default:
+#'   NULL). If included, results are stochastic with Norm(0, resid_err) added to
+#'   each individual
+#' @param beta_sd Standard deviation in beta estimates (default: NULL). If
+#'   included, results are stochastic with beta ~Norm(beta_mn, beta_sd)
+#'
+#' @return
+#' 
+convertAllometry1D <- function(orig, beta_mn, shape="linear", 
+                               resid_err=NULL, beta_sd=NULL) {
+  
+  # Incorporate parameter uncertainty
+  if(!is.null(beta_sd)) {
+    beta <- rnorm(length(beta_mn), beta_mn, beta_sd)
+  } else {
+    beta <- beta_mn
+  }
+  
+  # Incorporate environmental stochasticity
+  if(!is.null(resid_err)) {
+    err <- rnorm(length(orig), 0, resid_err)
+  } else {
+    err <- 0
+  }
+  
+  switch(shape,
+         linear=beta[1] + beta[2]*orig + err,
+         quadratic=beta[1] + beta[2]*orig + beta[3]*orig^2 + err,
+         exponential=exp(beta[1] + beta[2]*orig + err),
+         log=log(beta[1] + beta[2]*orig + err))
+}
+
+
+
+
+
 ####----------------------------------------------------------------------------
 # Growth, breakage, & herbivory
 ####----------------------------------------------------------------------------
