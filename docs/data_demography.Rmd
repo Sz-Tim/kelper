@@ -1,0 +1,101 @@
+---
+title: "KELPER"
+subtitle: "Kelp demography data"
+author: "Tim Szewczyk"
+output:
+  html_document:
+    theme: spacelab
+    df_print: paged
+    anchor_sections: TRUE
+    toc: yes
+    toc_depth: 2
+    toc_float: true
+  pdf_document:
+    toc: yes
+  html_notebook:
+    theme: spacelab
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# Overview
+
+This file explores demographic data, focussing on digitized plots from Kain on *Laminaria hyperborea*. 
+
+
+```{r setup, echo=F, include=F}
+# set directory for knitr as main project directory
+knitr::opts_knit$set(root.dir=rprojroot::find_rstudio_root_file())
+```
+
+```{r workspace, echo=F, include=F, message=F, warning=F}
+library(tidyverse); library(brms); theme_set(theme_bw())
+source("code/002_fnDemography.R")
+
+digitizedMetadata <- read_csv("..\\data\\digitized\\metadata.csv", show_col_types=F)
+
+fig.f <- unique(str_remove(dir("..\\data\\digitized", "_fig.*csv"), "[a-z]?.csv"))
+
+digitized <- fig.f %>% 
+  map(~dir("..\\data\\digitized", paste0(.x, "[a-z]?.csv")) %>%
+        map_dfr(~read_csv(paste0("..\\data\\digitized\\", .x), show_col_types=F) %>%
+                  mutate(reference=str_remove(.x, ".csv"))) %>%
+        left_join(., digitizedMetadata, by="reference")) %>%
+  setNames(fig.f)
+
+fig_var <- imap_dfr(digitized, 
+                    ~tibble(V1=names(.x)[1], V2=names(.x)[2], reference=.y)) %>%
+  arrange(V1, V2) %>%
+  mutate(vars=paste0(V1, "_", V2))
+
+unique_comparisons <- unique(fig_var$vars)
+varCombined.ls <- vector("list", length(unique_comparisons)) %>% 
+  setNames(unique_comparisons)
+for(i in seq_along(varCombined.ls)) {
+  refs <- fig_var$reference[fig_var$vars==unique_comparisons[i]]
+  varCombined.ls[[i]] <- do.call('rbind', digitized[refs])
+}
+```
+
+
+
+# Growth
+
+
+
+
+
+# Allometry
+Frond weight generally increases linearly with stipe weight on a log-log scale, though plants seem to be frondier in new growth after a clearing (Kain 1963, 1976a). 
+```{r wtStipe_wtFrond_clearing, echo=F}
+varCombined.ls$weightStipe_weightFrond %>%
+  ggplot(aes(log(weightStipe), log(weightFrond), colour=habitat=="clearing")) +
+  geom_point() + stat_smooth(method="lm") + 
+  scale_colour_brewer(type="qual", palette=3)
+```
+
+The effect of depth is less clear when aggregating across studies, though within Kain 1963, shallower kelp is frondier (blue vs. yellow).
+```{r wtStipe_wtFrond_clearing}
+varCombined.ls$weightStipe_weightFrond %>% 
+  ggplot(aes(log(weightStipe), log(weightFrond), 
+             colour=depth, group=depth, shape=habitat=="clearing")) +
+  geom_point() + stat_smooth(method="lm") + 
+  scale_shape_manual("Clearing", values=c(16, 1)) +
+  scale_colour_viridis_c(na.value="black")
+```
+
+
+
+
+# Density
+
+
+
+
+
+# Survival
+
+
+
+
