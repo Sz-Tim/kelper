@@ -13,7 +13,7 @@
 ####----------------------------------------------------------------------------
 
 
-#' Convert between 1D metrics of kelp size 
+#' Convert between metrics of kelp size 
 #'
 #' @param orig Vector of original measurements
 #' @param beta_mn Mean intercept + slope(s) for species
@@ -26,7 +26,7 @@
 #'
 #' @return
 #' 
-convertAllometry1D <- function(orig, beta_mn, shape="linear", 
+convertAllometry <- function(orig, beta_mn, shape="linear", 
                                resid_err=NULL, beta_sd=NULL) {
   
   # Incorporate parameter uncertainty
