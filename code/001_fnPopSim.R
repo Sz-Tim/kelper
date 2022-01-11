@@ -6,6 +6,111 @@
 # Population simulation functions
 
 
+simulatePopulation <- function(pars, N0=c(1, 1, 1)) {
+  
+  # calculate global parameters
+  logWtStipe.stage <- predict(pars$lenStipe_wtStipe,
+                              tibble(logLenStipe=log(pars$sizeClassMdpts)), ndraws=5)[,1]
+  K_FAI <- exp(predict(pars$depth_FAI, tibble(depth=pars$depth), ndraws=5)[1,1])
+  K_N <- exp(predict(pars$depth_N, tibble(depth=pars$depth, stage="canopy"), ndraws=5)[1,1])
+  
+  # storage
+  N <- FAI <- array(dim=c(pars$N_stages, pars$tmax, pars$N_seasons))
+  N[,1,1] <- N0
+  logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
+                              newdata=tibble(logWtStipe=logWtStipe.stage, 
+                                             propClear=1), ndraws=5)[,1]
+  FAI[,1,1] <- exp(predict(pars$wtFrond_areaFrond,
+                           tibble(depth=pars$depth, 
+                                  logWtFrond=log(N[,1,1]*exp(logWtFrond.stage))), ndraws=5)[,1])
+  harvest <- rep(0, pars$tmax) # log(grams of frond)
+  kappa <- array(dim=c(pars$tmax, pars$N_seasons, 2))
+  
+  # transition matrices
+  A <- map(1:pars$N_seasons, ~matrix(0, pars$N_stages, pars$N_stages)) %>%
+    setNames(c("spring", "fall", "winter"))
+  
+  
+  # simulation loop
+  for(i in 1:pars$tmax) {
+
+    #-- first season
+    # parameters
+    kappa[i,1,] <- c(min(1, FAI[3,i,1]/K_FAI), min(1, N[3,i,1]/K_N))
+    growRate_i <- pars$growthRateStipeMax * (1-kappa[i,1,1])^pars$growthRateDensityStipeShape
+    prGrowToNext <- growRate_i/(pars$sizeClassLimits-lag(pars$sizeClassLimits))[-1]
+    # growth
+    A$spring[2,1] <- pars$survRate[1]*prGrowToNext[1]
+    A$spring[3,2] <- pars$survRate[2]*prGrowToNext[2]
+    # survival
+    A$spring[1,1] <- pars$survRate[1] - A$spring[2,1]
+    A$spring[2,2] <- pars$survRate[2] - A$spring[3,2]
+    A$spring[3,3] <- pars$survRate[3]
+    # update population
+    logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
+                                newdata=tibble(logWtStipe=logWtStipe.stage, 
+                                               propClear=1-kappa[i,1,1]), ndraws=5)[,1]
+    logAreaFrond.stage <- predict(pars$wtFrond_areaFrond,
+                                  tibble(depth=pars$depth,
+                                         logWtFrond=logWtFrond.stage), ndraws=5)[,1]
+    N[,i,2] <- A$spring %*% N[,i,1]
+    FAI[,i,2] <- growFrondArea(FAI[,i,1], N[,i,1], A$spring, kappa[i,1,1],
+                               logAreaFrond.stage, pars)
+    
+    
+    #-- second season
+    # parameters
+    
+    kappa[i,2,] <- c(min(1, FAI[3,i,2]/K_FAI), min(1, N[3,i,2]/K_N))
+    # survival & harvest
+    diag(A$fall) <- pars$survRate
+    if(i%%pars$freqHarvest==0) {
+      A$fall[3,3] <- max(0, A$fall[3,3]-pars$prFullHarvest)
+      stipeBiomass <- ifelse(pars$harvestTarget %in% c("all", "stipe"),
+                             sum(exp(logWtStipe.stage) * N[,i,2]),
+                             0)
+      frondBiomass <- ifelse(pars$harvestTarget %in% c("all", "frond"),
+                             sum(exp(predict(pars$areaFrond_wtFrond,
+                                             tibble(depth=pars$depth, 
+                                                    logAreaFrond=log(FAI[,i,2])), 
+                                             ndraws=5)[,1])),
+                             0)
+      harvest[i] <- pars$prFullHarvest * (stipeBiomass + frondBiomass)
+
+    } 
+      
+    # update population
+    N[,i,3] <- A$fall %*% N[,i,2]
+    FAI[,i,3] <- diag(A$fall) * FAI[,i,2]
+    
+    
+    #-- third season
+    if(i < pars$tmax) {
+      # parameters
+      
+      kappa[i,3,] <- c(min(1, FAI[3,i,3]/K_FAI), min(1, N[3,i,3]/K_N))
+      # survival
+      diag(A$winter) <- pars$survRate
+      # reproduction
+      A$winter[1,3] <- pars$settlementRateBg*(1-max(kappa[i,3,]))
+      # update population
+      N[,i+1,1] <- A$winter %*% N[,i,3]
+      FAI[,i+1,1] <- FAI[,i,3] * pmax(0, (diag(A$winter) - pars$lossRate))
+    }
+  
+  }
+  
+  return(list(N=N, FAI=FAI, harvest=harvest, kappa=kappa))
+}
+
+
+
+
+
+
+
+
+
 
 
 
@@ -75,7 +180,6 @@ runMatrixModelFiner <- function(inputs){
     par(mfrow=c(1,3))
   }
   
-  # -------- Define some functions to calculate density dependent growth and mortality --------
   # If a constant growth rate (over size) has been specified, replace with a vector covering all size classes
   if (length(g0)==1){
     print("Single (constant) growth rate defined")
