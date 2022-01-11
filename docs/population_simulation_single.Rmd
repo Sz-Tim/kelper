@@ -1,0 +1,453 @@
+---
+title: "KELPER"
+subtitle: "Population simulation"
+author: "Tim Szewczyk"
+output:
+  html_document:
+    theme: spacelab
+    df_print: paged
+    anchor_sections: TRUE
+    toc: yes
+    toc_depth: 2
+    toc_float: true
+  pdf_document:
+    toc: yes
+  html_notebook:
+    theme: spacelab
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# Overview
+
+This script simulates an individual population using data from the literature.
+
+
+```{r setup, echo=F, include=F}
+# set directory for knitr as main project directory
+knitr::opts_knit$set(root.dir=rprojroot::find_rstudio_root_file())
+```
+
+```{r workspace, echo=F, include=F, message=F, warning=F}
+pkgs <- c("geoTS", "lubridate", "tidyverse", "sf", "brms")
+suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
+walk(dir("code", "^00.*R", full.names=T), source)
+theme_set(theme_bw())
+
+data.dir <- "..\\data\\digitized\\"
+data.ls <- compileDatasets(data.dir)
+
+site.i <- read_csv(paste0(data.dir, "sitesKain.csv"), col_select=1:3, show_col_types=F)
+
+rerun_modelFits <- FALSE
+```
+
+
+
+
+
+# Extract relevant data
+
+## Allometry 
+
+Allometric relationships include stipe length : stipe weight, stipe weight : frond weight, and frond weight : frond area. All are linear on a log-log scale. Plants invest more in fronds relative to stipes when the canopy is thinner, and fronds are thinner at greater depths. Both are suggestive of responses to light availability and limitation. 
+
+```{r extract_allometry}
+if(rerun_modelFits) {
+  # Stipe length (mm) -> stipe weight (g) : global
+  lenStipe_wtStipe <- data.ls$lengthStipe_weightStipe %>%
+    mutate(logWtStipe=log(weightStipe), 
+           logLenStipe=log(lengthStipe)) %>%
+    brm(logWtStipe ~ logLenStipe, prior=prior(normal(0,5)),  data=.)
+  saveRDS(lenStipe_wtStipe, "temp/brms_lenStipe_wtStipe.rds")
+  
+  # Stipe weight (g) -> frond weight (g) : kappa-dependent
+  wtStipe_wtFrond.kappa <- data.ls$weightStipe_weightFrond %>% 
+    mutate(propClear=as.numeric(habitat=="clearing"),
+           logWtFrond=log(weightFrond), 
+           logWtStipe=log(weightStipe)) %>%
+    brm(logWtFrond ~ logWtStipe*propClear, prior=prior(normal(0,5)), data=.)
+  saveRDS(wtStipe_wtFrond.kappa, "temp/brms_wtStipe_wtFrond_kappa.rds")
+  
+  # Frond weight (g) -> frond area (cm2 -> m2) : depth-dependent
+  wtFrond_areaFrond.depth <- data.ls$weightFrond_areaFrond %>%
+    mutate(logWtFrond=log(weightFrond),
+           logAreaFrond=log(areaFrond/1e4)) %>%
+    brm(logAreaFrond ~ logWtFrond*depth, prior=prior(normal(0,5)), data=.)
+  saveRDS(wtFrond_areaFrond.depth, "temp/brms_wtFrond_areaFrond_depth.rds")
+  
+  # Frond area (cm2 -> m2) -> frond weight (g) : depth-dependent
+  areaFrond_wtFrond.depth <- data.ls$weightFrond_areaFrond %>%
+    mutate(logWtFrond=log(weightFrond),
+           logAreaFrond=log(areaFrond/1e4)) %>%
+    brm(logWtFrond ~ logAreaFrond*depth, prior=prior(normal(0,5)), data=.)
+  saveRDS(areaFrond_wtFrond.depth, "temp/brms_areaFrond_wtFrond_depth.rds")
+  
+} else {
+  lenStipe_wtStipe <- readRDS("temp/brms_lenStipe_wtStipe.rds")
+  wtStipe_wtFrond.kappa <- readRDS("temp/brms_wtStipe_wtFrond_kappa.rds")
+  wtFrond_areaFrond.depth <- readRDS("temp/brms_wtFrond_areaFrond_depth.rds")
+  areaFrond_wtFrond.depth <- readRDS("temp/brms_areaFrond_wtFrond_depth.rds")
+}
+
+# Plots
+p1 <- conditional_effects(lenStipe_wtStipe)
+plot(p1, plot=F)[[1]] + ggtitle("Stipe weight ~ Stipe length")
+p2 <- conditional_effects(wtStipe_wtFrond.kappa, effects="logWtStipe:propClear",
+                          int_conditions=list(propClear=seq(0,1,0.2)))
+plot(p2, plot=F)[[1]] + scale_colour_viridis_d(option="E") +
+  scale_fill_viridis_d(option="E") + ggtitle("Frond weight ~ Stipe weight")
+p3 <- conditional_effects(wtFrond_areaFrond.depth, effects="logWtFrond:depth",
+                          int_conditions=list(depth=seq(5,15,5)))
+plot(p3, plot=F)[[1]] + scale_colour_viridis_d() +
+  scale_fill_viridis_d() + ggtitle("Frond area ~ Frond weight")
+p4 <- conditional_effects(areaFrond_wtFrond.depth, effects="logAreaFrond:depth",
+                          int_conditions=list(depth=seq(5,15,5)))
+plot(p4, plot=F)[[1]] + scale_colour_viridis_d() +
+  scale_fill_viridis_d() + ggtitle("Frond weight ~ Frond area")
+```
+
+
+## Growth
+
+Stipe growth over the course of the year is decently approximated by a harmonic model using data from Kain 1977 (recovery in clearings). Data are split by age, so here I'm making some assumptions to approximate age into the height-based stages used in the model. Recruits are defined as 0-1 year olds, subcanopy as 1-3 year olds, and canopy as 3+, all limits inclusive. Thus, the boundary ages are used for both stages. We integrate under the curve to estimate the maximum annual growth in open canopy.
+```{r extract_growthStipeLength}
+recruits <- data.ls$day_growthStipe %>% filter(ageGroup < 2) %>%
+  mutate(dailyGrowth=growthStipe/7, stage="recruits", date=as_date(day))
+subcanopy <- data.ls$day_growthStipe %>% filter(ageGroup > 0 & ageGroup < 3) %>%
+  mutate(dailyGrowth=growthStipe/7, stage="subcanopy", date=as_date(day))
+canopy <- data.ls$day_growthStipe %>% filter(ageGroup > 2) %>%
+  mutate(dailyGrowth=growthStipe/7, stage="canopy", date=as_date(day))
+recruits.hm <- haRmonics(y=recruits$dailyGrowth,
+                         ts=recruits$day,
+                         method="hants",
+                         low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
+                         lenBasePeriod=365, numFreq=1, delta=0.1)
+subcanopy.hm <- haRmonics(y=subcanopy$dailyGrowth,
+                          ts=subcanopy$day,
+                          method="hants",
+                          low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
+                          lenBasePeriod=365, numFreq=1, delta=0.1)
+canopy.hm <- haRmonics(y=canopy$dailyGrowth,
+                       ts=canopy$day,
+                       method="hants",
+                       low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
+                       lenBasePeriod=365, numFreq=1, delta=0.1)
+
+
+hm.1 <- list(a=recruits.hm$a.coef, b=recruits.hm$b.coef, 
+             fit=recruits.hm$fitted, 
+             phase=recruits.hm$phase, amp=recruits.hm$amplitude)
+hm.2 <- list(a=subcanopy.hm$a.coef, b=subcanopy.hm$b.coef, 
+             fit=subcanopy.hm$fitted, 
+             phase=subcanopy.hm$phase, amp=subcanopy.hm$amplitude)
+hm.3 <- list(a=canopy.hm$a.coef, b=canopy.hm$b.coef, 
+             fit=canopy.hm$fitted, 
+             phase=canopy.hm$phase, amp=canopy.hm$amplitude)
+
+day_seq <- seq(ymd("1970-01-01"), ymd("1970-12-31"), by="day")
+y <- (yday(day_seq)-1)/c(364,365)[leap_year(day_seq)+1]
+pred.1 <- mean(hm.1$fit) + hm.1$a * cos(2*pi*y) + hm.1$b * sin(2*pi*y)
+pred.2 <- mean(hm.2$fit) + hm.2$a * cos(2*pi*y) + hm.2$b * sin(2*pi*y)
+pred.3 <- mean(hm.3$fit) + hm.3$a * cos(2*pi*y) + hm.3$b * sin(2*pi*y)
+
+cat("Maximum expected annual growth in stipe length (mm) harmonic model:\n", 
+    round(c(sum(pred.1, na.rm=T), sum(pred.2, na.rm=T), sum(pred.3, na.rm=T))))
+
+pred.1 <- predict(loess(dailyGrowth ~ day, data=recruits), 
+        data.frame(day=yday(day_seq)))
+pred.2 <- predict(loess(dailyGrowth ~ day, data=subcanopy), 
+        data.frame(day=yday(day_seq)))
+pred.3 <- predict(loess(dailyGrowth ~ day, data=canopy), 
+        data.frame(day=yday(day_seq)))
+cat("Maximum expected annual growth in stipe length (mm) loess model:\n", 
+    round(c(sum(pred.1, na.rm=T), sum(pred.2, na.rm=T), sum(pred.3, na.rm=T))))
+
+
+tibble(date=day_seq, recruits=pred.1, subcanopy=pred.2, canopy=pred.3) %>%
+  pivot_longer(2:4, names_to="stage", values_to="dailyGrowth") %>%
+  mutate(stage=factor(stage, levels=c("canopy", "subcanopy", "recruits"))) %>%
+  ggplot(aes(date, dailyGrowth, colour=stage)) + 
+  geom_line(size=1) +
+  geom_jitter(data=recruits, shape=1) + 
+  geom_jitter(data=subcanopy, shape=1) +
+  geom_jitter(data=canopy, shape=1) +
+  scale_colour_brewer(type="qual", palette=2) +
+  scale_x_date(date_labels="%b") +
+  labs(title="Stipe growth rate", x="", y="Daily stipe growth (mm)")
+```
+
+
+Frond area growth is much more clearly defined by the seasons, and a simple harmonic model does not qualitatively match the observed pattern. Using the same age boundaries as for stipe growth rate, we approximate the temporal pattern for each stage using a loess smoother and again integrate under the curve. In contrast to stipe growth, we see the greatest growth rates in frond area in the larger stages, with peak growth rates about twice as large in canopy vs. subcanopy plants.
+```{r extract_growthFrondArea, warning=F}
+frondAreaGrowth <- data.ls$day_areaFrond %>%
+  filter(location=="Isle of Man") %>%
+  group_by(age) %>%
+  mutate(deltaArea=areaFrond-lag(areaFrond),
+         deltaDay=day-lag(day),
+         rate=deltaArea/deltaDay,
+         midptDay=day+deltaDay/2) %>%
+  mutate(dateMeasured=lubridate::as_date(round(midptDay))) %>%
+  filter(!is.na(rate))
+
+recruits <- frondAreaGrowth %>% filter(age < 2) %>%
+  mutate(dailyGrowth=rate, stage="recruits", date=as_date(day))
+subcanopy <- frondAreaGrowth %>% filter(age > 0 & age < 3) %>%
+  mutate(dailyGrowth=rate, stage="subcanopy", date=as_date(day))
+canopy <- frondAreaGrowth %>% filter(age > 2) %>%
+  mutate(dailyGrowth=rate, stage="canopy", date=as_date(day))
+
+day_seq <- seq(ymd("1970-01-01"), ymd("1970-12-31"), by="day")
+pred.1 <- predict(loess(dailyGrowth ~ day, data=recruits), 
+        data.frame(day=yday(day_seq)))
+pred.2 <- predict(loess(dailyGrowth ~ day, data=subcanopy), 
+        data.frame(day=yday(day_seq)))
+pred.3 <- predict(loess(dailyGrowth ~ day, data=canopy), 
+        data.frame(day=yday(day_seq)))
+
+cat("Maximum expected annual growth in frond area (cm^2):\n", 
+    round(c(sum(pred.1, na.rm=T), sum(pred.2, na.rm=T), sum(pred.3, na.rm=T))))
+
+tibble(date=day_seq, recruits=pred.1, subcanopy=pred.2, canopy=pred.3) %>%
+  pivot_longer(2:4, names_to="stage", values_to="dailyGrowth") %>%
+  mutate(stage=factor(stage, levels=c("canopy", "subcanopy", "recruits"))) %>%
+  ggplot(aes(date, dailyGrowth, colour=stage)) + 
+  geom_line(size=1) +
+  geom_jitter(data=recruits, shape=1) + 
+  geom_jitter(data=subcanopy, shape=1) +
+  geom_jitter(data=canopy, shape=1) +
+  scale_colour_brewer(type="qual", palette=2) +
+  scale_x_date(date_labels="%b") +
+  labs(title="Frond area growth rate", x="", y="Daily frond area growth (cm2)")
+```
+
+
+
+## Carrying capacity
+
+There are two options for defining carrying capacity: Density of individuals, or Frond Area Index. The number of individuals relates more to space limitations, while FAI directly relates to density dependent light limitation. Both variables show semi-log linear relationships with depth, and the effect of depth on density is more pronounced in the canopy compared to the subcanopy. 
+```{r extract_K, message=F, echo=F}
+# Option 1: FAI -- depth dependent
+depth_FAI.linlin <- lm(FAI ~ depth, data=data.ls$depth_FAI)
+depth_FAI.linlog <- lm(log(FAI) ~ depth, data=data.ls$depth_FAI)
+depth_FAI.loglin <- lm(FAI ~ log(depth), data=data.ls$depth_FAI)
+depth_FAI.loglog <- lm(log(FAI) ~ log(depth), data=data.ls$depth_FAI)
+MuMIn::AICc(depth_FAI.linlin, depth_FAI.loglin, 
+            depth_FAI.linlog, depth_FAI.loglog) %>%
+  arrange(AICc)
+
+if(rerun_modelFits) {
+  depth_FAI <- data.ls$depth_FAI %>%
+    mutate(logFAI=log(FAI)) %>%
+    brm(logFAI ~ depth, prior=prior(normal(0,5)), data=.)
+  saveRDS(depth_FAI, "temp/brms_depth_FAI_K.rds")
+} else {
+  depth_FAI <- readRDS("temp/brms_depth_FAI_K.rds")
+}
+
+data.ls$depth_FAI %>%
+  ggplot(aes(depth, log(FAI))) + stat_smooth(method="lm") + geom_point() +
+  labs(title="FAI ~ depth", x="Depth (m)", y="log(FAI)")
+
+
+# Option 2: Abundance -- depth dependent
+depth_density_stages <- data.ls$lengthStipe_NperSqM %>%
+  left_join(., data.ls$lengthStipe_NperSqM %>% 
+              group_by(depth) %>% 
+              summarise(stipeMin=min(lengthStipe), stipeMax=max(lengthStipe),
+                        top33=(stipeMax-stipeMin)*2/3 + stipeMin), 
+            by="depth") %>%
+  mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
+  group_by(depth, stage) %>%
+  summarise(NperSqM=sum(NperSqM))
+depth_density.linlin <- lm(NperSqM ~ depth * stage, data=depth_density_stages)
+depth_density.linlog <- lm(log(NperSqM) ~ depth * stage, data=depth_density_stages)
+depth_density.loglin <- lm(NperSqM ~ log(depth) * stage, data=depth_density_stages)
+depth_density.loglog <- lm(log(NperSqM) ~ log(depth) * stage, data=depth_density_stages)
+MuMIn::AICc(depth_density.linlin, depth_density.linlog, 
+            depth_density.loglin, depth_density.loglog) %>% 
+  arrange(AICc)
+
+if(rerun_modelFits) {
+  depth_N <- depth_density_stages %>%
+    mutate(logN=log(NperSqM)) %>%
+    brm(logN ~ depth*stage, prior=prior(normal(0,5)), data=.)
+  saveRDS(depth_N, "temp/brms_depth_N_K.rds")
+} else {
+  depth_N <- readRDS("temp/brms_depth_N_K.rds")
+}
+
+depth_density_stages %>%
+  mutate(stage=factor(stage, levels=c("canopy", "subcanopy", "recruits"))) %>%
+  ggplot(aes(depth, log(NperSqM), colour=stage)) + 
+  geom_point() + stat_smooth(method="lm") + 
+  scale_colour_brewer(type="qual", palette=2) + 
+  labs(title="N ~ depth", x="Depth (m)", y="log(N/m2)")
+```
+
+
+
+## Survival
+
+Pedersen 2012 built a similar stage-based model of L. hyperborea in Norway with three different levels of exposure, and provide all of the parameters as individuals/m^2 at an annual timestep. The sites are quite a bit further north, so I'm not sure how well this translates to Scotland, much less the whole UK.
+```{r extract_survival}
+surv.df <- data.ls$stageFrom_stageTo %>% 
+  filter(stageTo=="dead") %>%
+  mutate(survRate=1-rate)
+```
+
+
+
+## Breakage
+
+Johnston 1977: "40-50% [of gross carbon input] is lost by distal decay". Look into Dan Smale's work for more detailed data.
+```{r extract_loss}
+# TODO
+```
+
+
+
+## Fecundity
+
+The Pedersen 2012 model included stages for recruits, subcanopy, and canopy, and report the number of annual recruits. In some cases, the values are extremely high. My concerns about geographic differences apply here as well. 
+```{r extract_recruitment}
+fecund.df <- data.ls$stageFrom_stageTo %>% 
+  filter(stageFrom=="canopy" & stageTo=="recruits")
+```
+
+
+
+
+
+
+
+
+
+
+# Set model parameters
+
+```{r setParams}
+depth_i <- 5
+exposure_i <- c("low", "medium", "high")[1]
+pars <- setParameters(
+  prFullHarvest=0.7, freqHarvest=3, tmax=20, harvestTarget="stipe",
+  #survRate=filter(surv.df, exposure==exposure_i)$survRate^(1/3),
+  #settlementRateBg=filter(fecund.df, exposure==exposure_i)$rate,
+  extraPars=list(
+    depth=depth_i,
+    lenStipe_wtStipe=lenStipe_wtStipe,
+    wtStipe_wtFrond=wtStipe_wtFrond.kappa,
+    wtFrond_areaFrond=wtFrond_areaFrond.depth,
+    areaFrond_wtFrond=areaFrond_wtFrond.depth,
+    depth_N=depth_N,
+    depth_FAI=depth_FAI)
+)
+ 
+
+```
+
+
+
+
+# Simulate population
+```{r}
+out <- simulatePopulation(pars)
+
+out.df <- tibble(year=rep(1:pars$tmax, pars$N_seasons),
+                 month=rep(c(1,6,10), each=pars$tmax),
+                 date=ymd(paste0(2000+year, "-", month, "-01")),
+                 FAI=c(out$FAI[3,,]),
+                 N.recruits=c(out$N[1,,]),
+                 N.subcanopy=c(out$N[2,,]),
+                 N.canopy=c(out$N[3,,])) %>%
+  pivot_longer(contains("N."), names_to="stage", values_to="N") %>%
+  mutate(stage=factor(str_sub(stage, 3, -1), 
+                      levels=c("canopy", "subcanopy", "recruits")))
+
+ggplot(out.df, aes(date, N, colour=stage)) + geom_line(size=1) +
+  scale_colour_brewer(type="qual", palette=2) + scale_y_log10()
+
+out.df %>% filter(stage=="canopy" & month==6) %>%
+  ggplot(aes(date, FAI)) + geom_line(size=1)
+
+matplot(out$kappa[,,1], type="l", lty=1, ylim=c(0, 1), ylab="kappa_FAI")
+legend("topleft", c("winter","spring","fall"), col=1:3, lty=1)
+matplot(out$kappa[,,2], type="l", lty=1, ylim=c(0, 1), ylab="kappa_N")
+legend("topleft", c("winter","spring","fall"), col=1:3, lty=1)
+
+plot(out$harvest/1e3, type="b", xlab="Year", 
+     ylab=paste0("Harvest (", pars$harvestTarget, " kg/m2)"))
+
+
+
+
+library(furrr)
+plan(multisession)
+out <- future_map(1:240, ~simulatePopulation(pars), .options=furrr_options(seed=T))
+out.df <- imap_dfr(out, 
+                  ~tibble(sim=.y, 
+                          year=rep(1:pars$tmax, pars$N_seasons),
+                          month=rep(c(1,6,10), each=pars$tmax),
+                          date=ymd(paste0(year, "-", month, "-01")),
+                          FAI=c(.x$FAI[3,,]),
+                          N.recruits=c(.x$N[1,,]),
+                          N.subcanopy=c(.x$N[2,,]),
+                          N.canopy=c(.x$N[3,,])) %>%
+                    pivot_longer(contains("N."), names_to="stage", values_to="N") %>%
+                    mutate(stage=factor(str_sub(stage, 3, -1), 
+                                        levels=c("canopy", "subcanopy", "recruits"))))
+out.df %>%
+  ggplot(aes(date, N, colour=stage, group=paste0(stage, sim))) + 
+  geom_line(alpha=0.1, size=1) +
+  scale_colour_brewer(type="qual", palette=2) + scale_y_log10()
+out.df %>% filter(month==6) %>%
+  ggplot(aes(date, N, colour=stage, group=paste0(stage, sim))) + 
+  geom_line(alpha=0.1, size=1) +
+  scale_colour_brewer(type="qual", palette=2) + scale_y_log10()
+
+out.df %>% filter(stage=="canopy" & month==6) %>%
+  ggplot(aes(date, FAI, group=sim)) + geom_line(alpha=0.1, size=1) + ylim(0, NA)
+
+out.df %>% filter(stage=="canopy" & month==6) %>%
+  group_by(date) %>% 
+  summarise(FAI_mn=mean(FAI), 
+            FAI_q10=quantile(FAI, 0.1),
+            FAI_q25=quantile(FAI, 0.25),
+            FAI_q75=quantile(FAI, 0.75),
+            FAI_q90=quantile(FAI, 0.9)) %>%
+  ggplot(aes(date, FAI_mn, ymin=FAI_q10, ymax=FAI_q90)) +
+  geom_ribbon(alpha=0.5, colour=NA, fill="grey") +
+  geom_ribbon(aes(ymin=FAI_q25, ymax=FAI_q75), 
+              alpha=0.75, colour=NA, fill="grey") +
+  geom_line(size=1) + ylim(0, NA)
+
+imap_dfr(out, 
+         ~tibble(sim=.y, 
+                 date=ymd(paste0(1:pars$tmax, "-06-01")),
+                 harvest=.x$harvest/1e3)) %>%
+  ggplot(aes(date, harvest, group=sim)) + 
+  geom_point(alpha=0.2, size=1) + ylim(0,NA)
+
+imap_dfr(out, 
+         ~tibble(sim=.y, 
+                 date=ymd(paste0(1:pars$tmax, "-06-01")),
+                 harvest=.x$harvest/1e3)) %>%
+  group_by(date) %>% 
+  summarise(harvest_mn=mean(harvest), 
+            harvest_q10=quantile(harvest, 0.1),
+            harvest_q25=quantile(harvest, 0.25),
+            harvest_q75=quantile(harvest, 0.75),
+            harvest_q90=quantile(harvest, 0.9)) %>%
+  ggplot(aes(date, harvest_mn, ymin=harvest_q10, ymax=harvest_q90)) + 
+  geom_linerange(colour="grey", size=1) +
+  geom_linerange(aes(ymin=harvest_q25, ymax=harvest_q75), 
+                 size=2, colour="grey") +
+  geom_point() + ylim(0, NA)
+```
+
+
+
+
+# Analysis
+
