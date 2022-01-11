@@ -93,6 +93,38 @@ growDens <- function(propOccupiedSpace, g0, g1, sizeClass) {
 
 
 
+#' Calculate growth in frond area
+#' 
+#' Calculates Frond Area Index at the end of the time step
+#'
+#' @param FAI_orig Vector of initial frond areas
+#' @param N_orig Vector of initial population abundances
+#' @param A.mx Transition matrix
+#' @param kappa FAI_orig/FAI_K
+#' @param logAreaFrond.stage Vector of log frond areas calculated allometrically for each size class
+#' @param pars parameter list
+#'
+#' @return
+#' @export
+#'
+#' @examples
+growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, pars) {
+  FAI_new <- rep(0, pars$N_stages)
+  FAI_new[1] <- FAI_orig[1]*A.mx[1,1] +
+    N_orig[1]*A.mx[1,1]*pars$growthRateFrond[1]*(1-kappa)
+  for(j in 2:pars$N_stages) {
+    FAI_new[j] <- FAI_orig[j]*A.mx[j,j] +
+      N_orig[j]*A.mx[j,j]*pars$growthRateFrond[j]*(1-kappa) +
+      N_orig[j-1]*A.mx[j,j-1]*exp(logAreaFrond.stage[j-1])
+  }
+  
+  return(FAI_new)
+}
+
+
+
+
+
 
 
 
