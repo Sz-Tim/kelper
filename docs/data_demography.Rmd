@@ -49,39 +49,26 @@ knitr::opts_knit$set(root.dir=rprojroot::find_rstudio_root_file())
 
 ```{r workspace, echo=F, include=F, message=F, warning=F}
 library(tidyverse); library(sf); library(brms); theme_set(theme_bw())
-source("code/002_fnDemography.R")
+source("code/000_fnMisc.R"); source("code/002_fnDemography.R")
 
 data.dir <- "..\\data\\digitized\\"
-site.i <- read_csv(paste0(data.dir, "sitesKain.csv"), col_select=1:3)
+data.ls <- compileDatasets(data.dir)
+
+site.i <- read_csv(paste0(data.dir, "sitesKain.csv"), col_select=1:3, show_col_types=F)
 site.sf <- site.i %>% filter(!is.na(lon) & !is.na(lat)) %>%
   st_as_sf(coords=c("lon", "lat")) %>% st_set_crs(4326)
-digitizedMetadata <- read_csv(paste0(data.dir, "metadata.csv"), show_col_types=F) %>%
-  left_join(., site.i, by="location")
-coast <- read_sf(paste0("D:\\formerUser\\OneDrive - SAMS\\Documents\\",
-                        "DEPOMOD\\Stevie\\shapes\\minch_16-19a.shp")) 
-
-fig.f <- unique(str_remove(dir(data.dir, "_fig.*csv"), "[a-z]?.csv"))
-
-digitized <- fig.f %>% 
-  map(~dir(data.dir, paste0(.x, "[a-z]?.csv")) %>%
-        map_dfr(~read_csv(paste0(data.dir, .x), show_col_types=F) %>%
-                  mutate(reference=str_remove(.x, ".csv"))) %>%
-        left_join(., digitizedMetadata, by="reference", suffix=c("", ".meta"))) %>%
-  setNames(fig.f)
-
-fig_var <- imap_dfr(digitized, 
-                    ~tibble(V1=names(.x)[1], V2=names(.x)[2], reference=.y)) %>%
-  arrange(V1, V2) %>%
-  mutate(vars=paste0(V1, "_", V2))
-
-unique_comparisons <- unique(fig_var$vars)
-varCombined.ls <- vector("list", length(unique_comparisons)) %>% 
-  setNames(unique_comparisons)
-for(i in seq_along(varCombined.ls)) {
-  refs <- fig_var$reference[fig_var$vars==unique_comparisons[i]]
-  varCombined.ls[[i]] <- do.call('rbind', digitized[refs])
-}
+coast <- read_sf("../../0_gis/dataGeog/ne_10m_land.shp") %>%
+  add_row(read_sf("../../0_gis/dataGeog/ne_10m_minor_islands.shp")) %>%
+  st_crop(st_buffer(site.sf, 5e4))
 ```
+
+
+
+```{r maps, echo=F, warning=F, message=F}
+ggplot(site.sf) + geom_sf(data=coast) + geom_sf(colour="red")
+  
+```
+
 
 
 
@@ -95,7 +82,7 @@ We are interested in three main morphological metrics: stipe length (stage assig
 The conversion between stipe length and frond weight depends on light availability, with somewhat more allocation to fronds with abundant light, and somewhat leggier plants when light is scarce. This is inferred from Kain (1963, 1976a) based on plants in recovering clearings compared to plants in more natural patches.
 
 ```{r wtStipe_wtFrond_clearing, echo=F}
-varCombined.ls$weightStipe_weightFrond %>%
+data.ls$weightStipe_weightFrond %>%
   ggplot(aes(log(weightStipe), log(weightFrond), colour=habitat)) +
   geom_point() + stat_smooth(method="lm") + 
   scale_colour_brewer(type="qual", palette=3)
@@ -103,8 +90,8 @@ varCombined.ls$weightStipe_weightFrond %>%
 
 The effect of depth is less clear. Within habitat types, shallower kelp is frondier (blue vs. yellow), consistent with the effect of light availability. However, the shallowest site is intermediate, perhaps reflecting the effect of the forest habitat compared to the patch limit. The effect of clearing remains.
 
-```{r wtStipe_wtFrond_clearing, echo=F}
-varCombined.ls$weightStipe_weightFrond %>% 
+```{r wtStipe_wtFrond_habitatDepth, echo=F}
+data.ls$weightStipe_weightFrond %>% 
   ggplot(aes(log(weightStipe), log(weightFrond), 
              colour=-depth, group=depth, shape=habitat, linetype=habitat)) +
   geom_point() + stat_smooth(method="lm") + 
@@ -116,11 +103,11 @@ One possibility would be to use a weighted average (i.e., calculate regression c
 
 ```{r lm_lenStipe_wtStipe_wtFrond}
 lenStipe_wtStipe <- brm(log(weightStipe) ~ log(lengthStipe),
-                        data=varCombined.ls$lengthStipe_weightStipe)
-wtStipe_wtFrond.clearing <- varCombined.ls$weightStipe_weightFrond %>%
+                        data=data.ls$lengthStipe_weightStipe)
+wtStipe_wtFrond.clearing <- data.ls$weightStipe_weightFrond %>%
   filter(habitat=="clearing") %>%
   brm(log(weightFrond) ~ log(weightStipe), data=.)
-wtStipe_wtFrond.nonclearing <- varCombined.ls$weightStipe_weightFrond %>%
+wtStipe_wtFrond.nonclearing <- data.ls$weightStipe_weightFrond %>%
   filter(habitat!="clearing") %>%
   brm(log(weightFrond) ~ log(weightStipe), data=.)
 
@@ -138,12 +125,12 @@ for(i in seq_along(clear.prop)) {
 
 Then, the conversion from frond weight to frond area explicitly accounts for depth, as the relationship is clearly depth dependent. As it appears to be log-linear, we can estimate the change in slope across depths. For a given depth, we can then calculate the frond area based on the frond weight, accounting for uncertainty in the relationship.
 ```{r wtFrond_areaFrond}
-varCombined.ls$depth_beta_mn %>%
+data.ls$depth_beta_mn %>%
   ggplot(aes(depth, y=beta_mn, ymin=beta_mn-beta_sd, ymax=beta_mn+beta_sd)) +
   geom_pointrange() + 
   labs(x="Depth (m)", y="Slope of frond log area ~ log weight")
 
-beta.sim <- varCombined.ls$depth_beta_mn %>%
+beta.sim <- data.ls$depth_beta_mn %>%
   select(depth, beta_mn, beta_sd) %>%
   expand_grid(sim=1:100, .) %>%
   mutate(value=rnorm(n(), beta_mn, beta_sd))
@@ -157,9 +144,98 @@ Then, for a given depth and level of clearing, we can convert from stipe length 
 
 # Growth
 
-Frond growth is highly seasonal, with essentially all growth occurring between February and July, and a peak in April. For the length of the central frond finger, growth rates are comparable for 1-3 year olds, then somewhat lower for 4 year olds.
+Younger plants show faster stipe growth, but older plants show faster frond growth.
+
+Stipe growth is seasonal, but less clearly than frond growth. Most growth occurs between February and July, but with a bit more in December and January, and less clear coordination among age groups. Younger (presumably shorter) plants show greater growth. 
 ```{r growRateFrondLength, echo=F}
-varCombined.ls$day_growthFrond %>%
+data.ls$day_growthStipe %>%
+  mutate(dateMeasured=lubridate::as_date(round(day))) %>%
+  ggplot(aes(dateMeasured, growthStipe/7, colour=factor(ageGroup))) + 
+  geom_line(size=1) + scale_colour_viridis_d("Age") +
+  labs(x="Date", y="Stipe growth (mm/day)") +
+  scale_x_date(date_breaks="1 month", date_labels="%b", 
+               limits=lubridate::dmy(c("01-01-1970", "01-01-1971"))) +
+  theme(panel.grid.minor.x=element_blank())
+
+data.ls$day_growthStipe %>% select(-location, -depth, -age, -date, -lat, -lon) %>%
+  arrange(ageGroup, day) %>% 
+  mutate(dateMeasured=lubridate::as_date(round(day))) %>%
+  group_by(ageGroup) %>%
+  mutate(datePrevious=lag(dateMeasured),
+         nDays=dateMeasured-datePrevious,
+         month=lubridate::month(dateMeasured)) %>%
+  ggplot(aes(factor(month), growthStipe/7, colour=ageGroup<4)) + geom_point()
+
+library(geoTS)
+recruits <- data.ls$day_growthStipe %>% filter(ageGroup < 2) %>%
+  mutate(dailyGrowth=growthStipe/7)
+subcanopy <- data.ls$day_growthStipe %>% filter(ageGroup > 0 & ageGroup < 3) %>%
+  mutate(dailyGrowth=growthStipe/7)
+canopy <- data.ls$day_growthStipe %>% filter(ageGroup > 2) %>%
+  mutate(dailyGrowth=growthStipe/7)
+recruits.hm <- haRmonics(y=recruits$dailyGrowth,
+                         ts=recruits$day,
+                         method="hants",
+                          low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
+                         lenBasePeriod=365, numFreq=1, delta=0.1)
+subcanopy.hm <- haRmonics(y=subcanopy$dailyGrowth,
+                          ts=subcanopy$day,
+                          method="hants",
+                          low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=10,
+                          lenBasePeriod=365, numFreq=1, delta=0.1)
+canopy.hm <- haRmonics(y=canopy$dailyGrowth,
+                       ts=canopy$day,
+                       method="hants",
+                          low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=10,
+                       lenBasePeriod=365, numFreq=1, delta=0.1)
+
+
+hm.1 <- list(a=recruits.hm$a.coef, b=recruits.hm$b.coef, 
+             fit=recruits.hm$fitted, 
+             phase=recruits.hm$phase, amp=recruits.hm$amplitude)
+hm.2 <- list(a=subcanopy.hm$a.coef, b=subcanopy.hm$b.coef, 
+             fit=subcanopy.hm$fitted, 
+             phase=subcanopy.hm$phase, amp=subcanopy.hm$amplitude)
+hm.3 <- list(a=canopy.hm$a.coef, b=canopy.hm$b.coef, 
+             fit=canopy.hm$fitted, 
+             phase=canopy.hm$phase, amp=canopy.hm$amplitude)
+
+library(lubridate)
+
+start <- ymd("1970-01-01")
+end <- ymd("1970-12-31")
+
+day_seq <- seq(start, end, by="day")
+y <- (yday(day_seq)-1)/c(364,365)[leap_year(day_seq)+1]
+pred.1 <- mean(hm.1$fit) + hm.1$a * cos(2*pi*y) + hm.1$b * sin(2*pi*y)
+pred.2 <- mean(hm.2$fit) + hm.2$a * cos(2*pi*y) + hm.2$b * sin(2*pi*y)
+pred.3 <- mean(hm.3$fit) + hm.3$a * cos(2*pi*y) + hm.3$b * sin(2*pi*y)
+
+plot(NA, NA, xlim=c(1,length(y)), ylim=c(0, 1.5), xlab="Day", ylab="Daily growth")
+lines(1:length(y), pred.1, col="blue")
+points(recruits$day, recruits$dailyGrowth, col="blue")
+lines(1:length(y), pred.2, col="red")
+points(subcanopy$day, subcanopy$dailyGrowth, col="red")
+lines(1:length(y), pred.3, col="gray")
+points(canopy$day, canopy$dailyGrowth, col="gray")
+
+tibble(day=day_seq, 
+       month=month(day_seq),
+       season=case_when(month %in% 2:6 ~ "spring",
+                        month %in% 7:9 ~ "fall",
+                        month %in% c(10:12,1) ~ "winter"),
+       growthRecuits=pred.1,
+       growthSubcanopy=pred.2,
+       growthCanopy=pred.3) %>% 
+  group_by(season) %>%
+  summarise(across(contains("growth"), sum))
+```
+
+
+
+Frond growth is highly seasonal, with essentially all growth occurring between February and July, and a peak in April. For the length of the central frond finger, growth rates are comparable for 1-3 year olds, then somewhat lower for 4 year olds.
+```{r growRateFrondLengthPlot, echo=F}
+data.ls$day_growthFrond %>%
   mutate(dateMeasured=lubridate::as_date(round(day))) %>%
   ggplot(aes(dateMeasured, growthFrond/7, colour=factor(ageGroup))) + 
   geom_line(size=1) + scale_colour_viridis_d("Age") +
@@ -169,9 +245,10 @@ varCombined.ls$day_growthFrond %>%
   theme(panel.grid.minor.x=element_blank())
 ```
 
+
 For frond area, however, growth rate increases from ages 1-3, with similar seasonality across age groups. The peak occurs in May.
 ```{r growRateFrondArea, echo=F}
-varCombined.ls$day_areaFrond %>%
+data.ls$day_areaFrond %>%
   group_by(age, location) %>%
   mutate(deltaArea=areaFrond-lag(areaFrond),
          deltaDay=day-lag(day),
@@ -186,7 +263,7 @@ varCombined.ls$day_areaFrond %>%
 
 
 ```{r growRateFAI, echo=F}
-varCombined.ls$day_FAI %>%
+data.ls$day_FAI %>%
   mutate(habitat=str_remove(habitat, "clearing - "),
          clearanceDate=lubridate::ymd(paste0("1970-", habitat, "-01")),
          dateMeasured=clearanceDate+day) %>%
@@ -204,6 +281,19 @@ varCombined.ls$day_FAI %>%
 
 # Survival
 
+```{r}
+data.ls$stageFrom_stageTo %>%
+  mutate(type=case_when(stageTo=="dead" ~ "mortality",
+                        stageFrom==stageTo ~ "persist",
+                        stageFrom=="canopy" & stageTo=="recruits" ~ "fecundity",
+                        stageFrom=="subcanopy" & stageTo=="canopy" ~ "growth",
+                        stageFrom=="recruits" & stageTo=="subcanopy" ~ "growth"),
+         exposure=factor(exposure, levels=c("low", "medium", "high")),
+         stageFrom=factor(stageFrom, levels=c("canopy", "subcanopy", "recruits"))) %>%
+  ggplot(aes(as.numeric(exposure), rate, colour=stageFrom)) + 
+  geom_line(size=1) + facet_wrap(~type, scales="free_y") +
+  scale_colour_brewer(type="qual", palette=2)
+```
 
 
 
@@ -225,22 +315,22 @@ Kain (1976a) reports kelp densities by stipe length in virgin forests and follow
 
 Density in the clearings is much higher, with a distribution skewed toward shorter, presumably younger, plants. As kelp is expected to self-thin, this is not surprising. The Norwegian virgin forest appears to have no small plants, while the Scottish forest is vaguely similar in shape, but muted in amplitude.  
 ```{r density_lenStipe, echo=F, message=F}
-varCombined.ls$lengthStipe_NperSqM <- varCombined.ls$lengthStipe_NperSqM %>%
+data.ls$lengthStipe_NperSqM <- data.ls$lengthStipe_NperSqM %>%
   filter(!grepl("fig17", reference))
-varCombined.ls$lengthStipe_NperSqM %>%
+data.ls$lengthStipe_NperSqM %>%
   ggplot(aes(lengthStipe, ymax=NperSqM, fill=depth, group=reference)) + 
   geom_ribbon(ymin=0, alpha=0.5, colour="grey30") + 
   # facet_grid(location~.) +
   scale_fill_viridis_c() 
 
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   group_by(location, depth) %>%
   summarise(NperSqM=sum(NperSqM)) %>%
   ggplot(aes(depth, NperSqM)) + 
   geom_point() + ylim(0, NA) +
   scale_fill_viridis_c() 
 
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   mutate(lengthBin=lengthStipe %/% 100 * 100 + 50) %>%
   group_by(location, depth, lengthBin) %>%
   summarise(NperSqM=sum(NperSqM)) %>%
@@ -250,20 +340,20 @@ varCombined.ls$lengthStipe_NperSqM %>%
 ```
 
 As there seems to be a natural break in the datasets around 600mm. Using this as a threshold for *canopy* vs. *subcanopy* plants (the hoped-for stages), we can estimate the density of individuals in each category.
-```{r density_canopy, echo=F, message=F}
-varCombined.ls$lengthStipe_NperSqM %>% 
+```{r density_depth, echo=F, message=F}
+data.ls$lengthStipe_NperSqM %>% 
   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < 600)]) %>%
   group_by(location, depth, stage) %>%
   summarise(NperSqM=sum(NperSqM)) %>%
-  ggplot(aes(stage, NperSqM, fill=depth, group=depth)) + 
-  geom_bar(stat="identity", position="dodge", colour="grey30") +
-  scale_fill_brewer(type="qual", palette=2) + #facet_grid(location~.) +
-  scale_fill_viridis_c() 
+  ggplot(aes(depth, NperSqM, colour=stage, group=stage)) + 
+  geom_point() + stat_smooth(method="lm") +
+  scale_y_log10() +
+  scale_colour_brewer(type="qual", palette=2)
 ```
 
 Or, following Kain 1977 (fig. 14, LAI vs. stipe length distribution), we can use the upper 1/3 of the length distribution as a threshold for *canopy* vs. *subcanopy* plants (the hoped-for stages).
 ```{r density_canopy, echo=F, message=F}
-stipe.rng <- varCombined.ls$lengthStipe_NperSqM %>% 
+stipe.rng <- data.ls$lengthStipe_NperSqM %>% 
   group_by(depth) %>% 
   summarise(stipeMin=min(lengthStipe), stipeMax=max(lengthStipe), 
             top90=(stipeMax-stipeMin)*.1 + stipeMin,
@@ -273,7 +363,7 @@ stipe.rng <- varCombined.ls$lengthStipe_NperSqM %>%
             top33=(stipeMax-stipeMin)*2/3 + stipeMin,
             top25=(stipeMax-stipeMin)*.75 + stipeMin,
             top10=(stipeMax-stipeMin)*.9 + stipeMin)
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   left_join(., stipe.rng, by="depth") %>%
   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
   group_by(depth, stage) %>%
@@ -281,38 +371,84 @@ varCombined.ls$lengthStipe_NperSqM %>%
   ggplot(aes(stage, NperSqM, fill=depth, group=depth)) + 
   geom_bar(stat="identity", position="dodge", colour="grey30") +
   scale_fill_viridis_c() 
+data.ls$lengthStipe_NperSqM %>% 
+  left_join(., stipe.rng, by="depth") %>%
+  mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
+  group_by(depth, stage) %>%
+  summarise(NperSqM=sum(NperSqM)) %>%
+  ggplot(aes(stage, NperSqM)) + 
+  geom_boxplot() 
+data.ls$lengthStipe_NperSqM %>% 
+  left_join(., stipe.rng, by="depth") %>%
+  mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
+  group_by(depth, stage) %>%
+  summarise(NperSqM=sum(NperSqM)) %>%
+  ggplot(aes(depth, NperSqM, colour=stage)) + 
+  geom_point() + stat_smooth(method="lm") +
+  scale_y_log10() + scale_x_log10()
 ```
 
 
 Alternatively, we can use allometric relationships above to convert from stipe length to frond weight. This is useful as harvesting biomass, but we really need to get from frond weight to frond area index.
 ```{r densitylenStipe_wtFrond, results=F}
 lenStipe_wtStipe <- brm(log(weightStipe) ~ log(lengthStipe),
-                        data=varCombined.ls$lengthStipe_weightStipe)
+                        data=data.ls$lengthStipe_weightStipe)
 wtStipe_wtFrond <- brm(log(weightFrond) ~ log(weightStipe), 
-                       data=varCombined.ls$weightStipe_weightFrond)
+                       data=data.ls$weightStipe_weightFrond)
 lenStipe_wtStipe.mx <- as_draws_matrix(lenStipe_wtStipe)
 wtStipe_wtFrond.mx <- as_draws_matrix(wtStipe_wtFrond)
 
 
-simStipeLen <- varCombined.ls$lengthStipe_NperSqM$lengthStipe %/% 100 * 100 + 50
-estFrondWt <- matrix(0, nrow(wtStipe_wtFrond.mx), length(simStipeLen))
+simStipeLen <- data.ls$lengthStipe_NperSqM$lengthStipe %/% 100 * 100 + 50
+estFrondWt <- estStipeWt <- matrix(0, nrow(wtStipe_wtFrond.mx), length(simStipeLen))
 for(i in 1:nrow(wtStipe_wtFrond.mx)) {
-  simStipeWt <- convertAllometry1D(log(simStipeLen), lenStipe_wtStipe.mx[i,1:2],
+  estStipeWt[i,] <- convertAllometry(log(simStipeLen), lenStipe_wtStipe.mx[i,1:2],
                                    shape="linear", 
                                    resid_err=lenStipe_wtStipe.mx[i,3])
-  estFrondWt[i,] <- convertAllometry1D(simStipeWt, wtStipe_wtFrond.mx[i,1:2],
+  estFrondWt[i,] <- convertAllometry(estStipeWt[i,], wtStipe_wtFrond.mx[i,1:2],
                                        shape="linear", 
                                        resid_err=wtStipe_wtFrond.mx[i,3])
 }
-varCombined.ls$lengthStipe_NperSqM <- varCombined.ls$lengthStipe_NperSqM %>%
-  mutate(wtFrond_mn=apply(exp(estFrondWt), 2, mean),
+data.ls$lengthStipe_NperSqM <- data.ls$lengthStipe_NperSqM %>%
+  mutate(wtStipe_mn=apply(exp(estStipeWt), 2, mean),
+         wtStipe_q10=apply(exp(estStipeWt), 2, quantile, probs=0.1),
+         wtStipe_q90=apply(exp(estStipeWt), 2, quantile, probs=0.9),
+         wtFrond_mn=apply(exp(estFrondWt), 2, mean),
          wtFrond_q10=apply(exp(estFrondWt), 2, quantile, probs=0.1),
          wtFrond_q90=apply(exp(estFrondWt), 2, quantile, probs=0.9))
 
 ```
 
 ```{r density_wtFrond, message=F}
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
+  mutate(lengthBin=lengthStipe %/% 100 * 100 + 50) %>%
+  group_by(location, depth, lengthBin) %>%
+  summarise(wtStipePerSqM_mn=sum(wtStipe_mn*NperSqM)/1000,
+            wtStipePerSqM_q10=sum(wtStipe_q10*NperSqM)/1000,
+            wtStipePerSqM_q90=sum(wtStipe_q90*NperSqM)/1000) %>%
+  ggplot(aes(lengthBin, wtStipePerSqM_mn, colour=depth, fill=depth, group=depth)) + 
+  geom_ribbon(aes(ymin=wtStipePerSqM_q10, ymax=wtStipePerSqM_q90), alpha=0.5) +
+  geom_point() + 
+  scale_colour_viridis_c() + scale_fill_viridis_c() +
+  facet_grid(location~.) +
+  labs(x="Stipe length (mm)", y=expression('Stipe weight (kg/m'^2~')'))
+
+data.ls$lengthStipe_NperSqM %>% 
+  left_join(., stipe.rng, by="depth") %>%
+  mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
+  filter(stage=="canopy") %>%
+  group_by(location, depth, stage) %>%
+  summarise(wtStipePerSqM_mn=sum(wtStipe_mn*NperSqM)/1e3,
+            wtStipePerSqM_q10=sum(wtStipe_q10*NperSqM)/1e3,
+            wtStipePerSqM_q90=sum(wtStipe_q90*NperSqM)/1e3) %>%
+  ggplot(aes(depth, wtStipePerSqM_mn, colour=depth, group=depth)) + 
+  geom_pointrange(aes(ymin=wtStipePerSqM_q10, ymax=wtStipePerSqM_q90), 
+                  position=position_dodge(width=0.25)) +
+  scale_colour_viridis_c() + scale_y_log10() +
+  labs(x="", y=expression('Stipe weight (kg/m'^2~')'))
+
+
+data.ls$lengthStipe_NperSqM %>% 
   mutate(lengthBin=lengthStipe %/% 100 * 100 + 50) %>%
   group_by(location, depth, lengthBin) %>%
   summarise(wtFrondPerSqM_mn=sum(wtFrond_mn*NperSqM)/1000,
@@ -325,7 +461,7 @@ varCombined.ls$lengthStipe_NperSqM %>%
   facet_grid(location~.) +
   labs(x="Stipe length (mm)", y=expression('Frond weight (kg/m'^2~')'))
 
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   group_by(location, depth) %>%
   summarise(wtFrondPerSqM_mn=sum(wtFrond_mn*NperSqM)/1e3,
             wtFrondPerSqM_q10=sum(wtFrond_q10*NperSqM)/1e3,
@@ -336,7 +472,7 @@ varCombined.ls$lengthStipe_NperSqM %>%
   scale_colour_viridis_c() +
   labs(x="Depth (m)", y=expression('Frond weight (kg/m'^2~')'))
 
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < 600)]) %>%
   group_by(location, depth, stage) %>%
   summarise(wtFrondPerSqM_mn=sum(wtFrond_mn*NperSqM)/1e3,
@@ -348,7 +484,7 @@ varCombined.ls$lengthStipe_NperSqM %>%
   scale_colour_viridis_c() +
   labs(x="", y=expression('Frond weight (kg/m'^2~')'))
 
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   left_join(., stipe.rng, by="depth") %>%
   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
   filter(stage=="canopy") %>%
@@ -356,7 +492,7 @@ varCombined.ls$lengthStipe_NperSqM %>%
   summarise(wtFrondPerSqM_mn=sum(wtFrond_mn*NperSqM)/1e3,
             wtFrondPerSqM_q10=sum(wtFrond_q10*NperSqM)/1e3,
             wtFrondPerSqM_q90=sum(wtFrond_q90*NperSqM)/1e3) %>%
-  ggplot(aes(stage, wtFrondPerSqM_mn, colour=depth, group=depth, shape=location)) + 
+  ggplot(aes(depth, wtFrondPerSqM_mn, colour=depth, group=depth)) + 
   geom_pointrange(aes(ymin=wtFrondPerSqM_q10, ymax=wtFrondPerSqM_q90), 
                   position=position_dodge(width=0.25)) +
   scale_colour_viridis_c() +
@@ -366,73 +502,76 @@ varCombined.ls$lengthStipe_NperSqM %>%
 And further, we can estimate frond area from the frond weight. **Depth should be added here.**
 ```{r densitylenStipe_areaFrond, results=F}
 lenStipe_wtStipe <- brm(log(weightStipe) ~ log(lengthStipe),
-                        data=varCombined.ls$lengthStipe_weightStipe)
+                        data=data.ls$lengthStipe_weightStipe)
 wtStipe_wtFrond <- brm(log(weightFrond) ~ log(weightStipe), 
-                       data=varCombined.ls$weightStipe_weightFrond)
+                       data=data.ls$weightStipe_weightFrond)
 wtFrond_areaFrond <- brm(log(areaFrond/1e4) ~ log(weightFrond), 
-                       data=varCombined.ls$weightFrond_areaFrond)
+                       data=data.ls$weightFrond_areaFrond)
 lenStipe_wtStipe.mx <- as_draws_matrix(lenStipe_wtStipe)
 wtStipe_wtFrond.mx <- as_draws_matrix(wtStipe_wtFrond)
 wtFrond_areaFrond.mx <- as_draws_matrix(wtFrond_areaFrond)
 
 
-simStipeLen <- varCombined.ls$lengthStipe_NperSqM$lengthStipe %/% 100 * 100
+simStipeLen <- data.ls$lengthStipe_NperSqM$lengthStipe %/% 100 * 100
 estFrondArea <- matrix(0, nrow(wtFrond_areaFrond.mx), length(simStipeLen))
 for(i in 1:nrow(wtFrond_areaFrond.mx)) {
-  estStipeWt <- convertAllometry1D(log(simStipeLen), lenStipe_wtStipe.mx[i,1:2],
+  estStipeWt <- convertAllometry(log(simStipeLen), lenStipe_wtStipe.mx[i,1:2],
                                    shape="linear")#, 
                                    # resid_err=lenStipe_wtStipe.mx[i,3])
-  estFrondWt <- convertAllometry1D(estStipeWt, wtStipe_wtFrond.mx[i,1:2],
+  estFrondWt <- convertAllometry(estStipeWt, wtStipe_wtFrond.mx[i,1:2],
                                    shape="linear")#, 
                                    # resid_err=wtStipe_wtFrond.mx[i,3])
-  estFrondArea[i,] <- convertAllometry1D(estFrondWt, wtFrond_areaFrond.mx[i,1:2],
+  estFrondArea[i,] <- convertAllometry(estFrondWt, wtFrond_areaFrond.mx[i,1:2],
                                          shape="linear")#, 
                                          # resid_err=wtFrond_areaFrond.mx[i,3])
 }
-varCombined.ls$lengthStipe_NperSqM <- varCombined.ls$lengthStipe_NperSqM %>%
+data.ls$lengthStipe_NperSqM <- data.ls$lengthStipe_NperSqM %>%
   mutate(areaFrond_mn=apply(exp(estFrondArea), 2, mean),
          areaFrond_q10=apply(exp(estFrondArea), 2, quantile, probs=0.1),
          areaFrond_q90=apply(exp(estFrondArea), 2, quantile, probs=0.9))
 ```
 
 ```{r density_areaFrond, message=F}
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   mutate(lengthBin=lengthStipe %/% 100 * 100 + 50) %>%
   group_by(location, depth, lengthBin) %>%
-  summarise(areaFrondPerSqM_mn=sum(areaFrond_mn*NperSqM),
-            areaFrondPerSqM_q10=sum(areaFrond_q10*NperSqM),
-            areaFrondPerSqM_q90=sum(areaFrond_q90*NperSqM)) %>%
-  ggplot(aes(lengthBin, areaFrondPerSqM_mn, colour=depth, fill=depth, group=depth)) + 
-  geom_ribbon(aes(ymin=areaFrondPerSqM_q10, ymax=areaFrondPerSqM_q90), alpha=0.5) +
+  summarise(FAI_mn=sum(areaFrond_mn*NperSqM),
+            FAI_q10=sum(areaFrond_q10*NperSqM),
+            FAI_q90=sum(areaFrond_q90*NperSqM)) %>%
+  ggplot(aes(lengthBin, FAI_mn, colour=depth, fill=depth, group=depth)) + 
+  geom_ribbon(aes(ymin=FAI_q10, ymax=FAI_q90), alpha=0.5) +
   geom_point() + 
   scale_colour_viridis_c() + scale_fill_viridis_c() +
   facet_grid(location~.) +
   labs(x="Stipe length (mm)", y="Frond Area Index")
 
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   group_by(location, depth) %>%
-  summarise(areaFrondPerSqM_mn=sum(areaFrond_mn*NperSqM),
-            areaFrondPerSqM_q10=sum(areaFrond_q10*NperSqM),
-            areaFrondPerSqM_q90=sum(areaFrond_q90*NperSqM)) %>%
-  ggplot(aes(depth, areaFrondPerSqM_mn, colour=depth)) + 
-  geom_pointrange(aes(ymin=areaFrondPerSqM_q10, ymax=areaFrondPerSqM_q90), 
-                  position=position_dodge(width=0.25)) +
+  summarise(FAI_mn=sum(areaFrond_mn*NperSqM),
+            FAI_q10=sum(areaFrond_q10*NperSqM),
+            FAI_q90=sum(areaFrond_q90*NperSqM)) %>%
+  ungroup %>% mutate(source="modelled") %>%
+  add_row(data.ls$depth_FAI %>% select(location, depth, FAI) %>%
+            rename(FAI_mn=FAI) %>% mutate(source="data")) %>%
+  filter(FAI_mn < 6) %>%
+  ggplot(aes(depth, FAI_mn, colour=depth, shape=source, linetype=source)) + 
+  geom_pointrange(aes(ymin=FAI_q10, ymax=FAI_q90)) +
   stat_smooth(method="lm", colour="grey30", se=F, size=0.6) +
-  scale_colour_viridis_c() +
+  scale_colour_viridis_c() + scale_shape_manual(values=c(16, 1)) +
   labs(x="Depth (m)", y="Frond Area Index")
 
-varCombined.ls$lengthStipe_NperSqM %>% 
+data.ls$lengthStipe_NperSqM %>% 
   left_join(., stipe.rng, by="depth") %>%
   mutate(stage=case_when(lengthStipe<top66 ~ "sub-subcanopy",
                          lengthStipe>=top66 & lengthStipe<top33 ~ "subcanopy",
                          lengthStipe>=top33 ~ "canopy")) %>%
   mutate(stage=factor(stage, levels=c("sub-subcanopy", "subcanopy", "canopy"))) %>%
   group_by(location, depth, stage) %>%
-  summarise(areaFrondPerSqM_mn=sum(areaFrond_mn*NperSqM),
-            areaFrondPerSqM_q10=sum(areaFrond_q10*NperSqM),
-            areaFrondPerSqM_q90=sum(areaFrond_q90*NperSqM)) %>%
-  ggplot(aes(depth, areaFrondPerSqM_mn, colour=stage)) + 
-  geom_pointrange(aes(ymin=areaFrondPerSqM_q10, ymax=areaFrondPerSqM_q90), 
+  summarise(FAI_mn=sum(areaFrond_mn*NperSqM),
+            FAI_q10=sum(areaFrond_q10*NperSqM),
+            FAI_q90=sum(areaFrond_q90*NperSqM)) %>%
+  ggplot(aes(depth, FAI_mn, colour=stage)) + 
+  geom_pointrange(aes(ymin=FAI_q10, ymax=FAI_q90), 
                   position=position_dodge(width=0.25)) +
   stat_smooth(method="lm", se=F, size=0.6) +
   scale_colour_brewer(type="qual", palette=2) +
@@ -450,7 +589,7 @@ varCombined.ls$lengthStipe_NperSqM %>%
 
 The size distribution, measured by stipe length, is qualitatively less bimodal in sparsely populated patches compared to within forests. 
 ```{r lenStipe_distribution, echo=F}
-varCombined.ls$lengthStipe_proportion %>% filter(!grepl("fig14a", reference)) %>%
+data.ls$lengthStipe_proportion %>% filter(!grepl("fig14a", reference)) %>%
   ggplot(aes(lengthStipe, ymax=proportion, fill=location, group=reference)) + 
   geom_ribbon(ymin=0, alpha=0.5) + facet_grid(depth~.)
 ```
@@ -462,10 +601,16 @@ varCombined.ls$lengthStipe_proportion %>% filter(!grepl("fig14a", reference)) %>
 Stipe weight levels off after age 5-6, and individuals tend to have more massive stipes at shallower depths, in forests, or both.
 
 ```{r wtStipe_age_depth, echo=F}
-varCombined.ls$ageMin_weightStipe %>%
-  ggplot(aes(factor(ageMin), log(weightStipe), fill=factor(location))) + 
+data.ls$ageMin_weightStipe %>%
+  ggplot(aes(factor(ageMin), log(weightStipe), fill=factor(depth))) + 
   geom_boxplot() + 
   labs(x="Age", y="ln stipe weight (g)") +
   scale_fill_brewer("Location")
+
+data.ls$ageMin_weightStipe %>%
+  ggplot(aes(ageMin, log(weightStipe), colour=factor(depth))) + 
+  geom_point(alpha=0.5) + stat_smooth(method="lm", formula=y~log(x)) +
+  labs(x="Age", y="ln stipe weight (g)") +
+  scale_colour_brewer("Depth", type="qual", palette=2)
 ```
 
