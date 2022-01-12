@@ -1,0 +1,89 @@
+---
+title: "KELPER"
+subtitle: "Covariates: UK"
+author: "Tim Szewczyk"
+output:
+  html_document:
+    theme: spacelab
+    df_print: paged
+    anchor_sections: TRUE
+    toc: yes
+    toc_depth: 2
+    toc_float: true
+  pdf_document:
+    toc: yes
+  html_notebook:
+    theme: spacelab
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# Overview
+
+This script simulates an individual population using data from the literature.
+
+
+```{r setup, echo=F, include=F}
+# set directory for knitr as main project directory
+knitr::opts_knit$set(root.dir=rprojroot::find_rstudio_root_file())
+```
+
+```{r workspace, echo=F, include=F, message=F, warning=F}
+pkgs <- c("raster", "lubridate", "tidyverse", "sf")
+suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
+walk(dir("code", "^00.*R", full.names=T), source)
+theme_set(theme_bw())
+
+data.dir <- "..\\data\\digitized\\"
+gis.dir <- "..\\..\\0_gis\\"
+UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
+
+data.ls <- compileDatasets(data.dir)
+site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
+                   col_select=1:3, show_col_types=F) %>%
+  filter(location != "Molde")
+site.sf <- site.i %>% filter(!is.na(lon) & !is.na(lat)) %>%
+  st_as_sf(coords=c("lon", "lat")) %>% st_set_crs(4326) 
+
+coast <- read_sf("../../0_gis/dataGeog/ne_10m_land.shp") %>%
+  add_row(read_sf("../../0_gis/dataGeog/ne_10m_minor_islands.shp")) %>%
+  st_crop(UK_bbox)
+```
+
+```{r loadCovariates, message=F, warning=F}
+covariate.ls <- list(
+  fetch=dir(paste0(gis.dir, "dataGeog"), "^FetchUK_200m", full.names=T) %>% 
+    read_csv(show_col_types=F) %>% st_as_sf(coords=c("OSEast", "OSNorth")) %>% 
+    st_set_crs(27700) %>% st_transform(4326),
+  sst_day=dir(paste0(gis.dir, "dataEnv\\climate"), 
+              "MODISA_L3m_SST_Monthly", full.names=T) %>%
+    raster() %>% crop(UK_bbox),
+  sst_night=dir(paste0(gis.dir, "dataEnv\\climate"), 
+                "MODISA_L3m_NSST_Monthly", full.names=T) %>%
+    raster() %>% crop(UK_bbox),
+  chla=dir(paste0(gis.dir, "dataEnv\\chla"), 
+           "MODISA_L3m_CHL", full.names=T) %>%
+    raster() %>% crop(UK_bbox),
+  irrad_longterm=dir(paste0(gis.dir, "dataEnv\\irradience"), 
+                     "POWER_Regional_Climatology", full.names=T) %>%
+    read_csv(skip=10) %>% st_as_sf(coords=c("LON", "LAT"), crs=4326),
+  irrad_monthly=dir(paste0(gis.dir, "dataEnv\\irradience"), 
+                     "POWER_Regional_monthly", full.names=T) %>%
+    read_csv(skip=10) %>% 
+    filter(JAN != -999) %>% select(-ANN) %>%
+    group_by(PARAMETER, YEAR) %>% mutate(id=row_number()) %>% ungroup %>%
+    pivot_longer(5:16, names_to="MONTH", values_to="PAR") %>%
+    st_as_sf(coords=c("LON", "LAT"), crs=4326),
+  irrad_daily=dir(paste0(gis.dir, "dataEnv\\irradience"), 
+                     "POWER_Regional_Daily", full.names=T) %>%
+    read_csv(skip=10) %>% 
+    mutate(DATE=lubridate::ymd(paste(YEAR, MO, DY, sep="-"))) %>% 
+    st_as_sf(coords=c("LON", "LAT"), crs=4326)
+)
+
+irrad.grid <- (st_bbox(covariate.ls$irrad_longterm) + .25*c(-1,-1,1,1)) %>%
+  st_make_grid(cellsize=c(0.5, 0.5)) %>% st_sf(id=1:length(.))
+
+```
+
