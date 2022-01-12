@@ -9,7 +9,7 @@ compileDatasets <- function(data.dir) {
   
   library(tidyverse)
   
-  site.i <- read_csv(paste0(data.dir, "sitesKain.csv"), col_select=1:3, show_col_types=F)
+  site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"), col_select=1:3, show_col_types=F)
   digitizedMetadata <- read_csv(paste0(data.dir, "metadata.csv"), show_col_types=F) %>%
     left_join(., site.i, by="location")
   fig.f <- unique(str_remove(dir(data.dir, "_fig.*csv"), "[a-z]?.csv"))

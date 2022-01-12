@@ -54,7 +54,7 @@ source("code/000_fnMisc.R"); source("code/002_fnDemography.R")
 data.dir <- "..\\data\\digitized\\"
 data.ls <- compileDatasets(data.dir)
 
-site.i <- read_csv(paste0(data.dir, "sitesKain.csv"), col_select=1:3, show_col_types=F)
+site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"), col_select=1:3, show_col_types=F)
 site.sf <- site.i %>% filter(!is.na(lon) & !is.na(lat)) %>%
   st_as_sf(coords=c("lon", "lat")) %>% st_set_crs(4326)
 coast <- read_sf("../../0_gis/dataGeog/ne_10m_land.shp") %>%
