@@ -302,9 +302,23 @@ surv.df <- data.ls$stageFrom_stageTo %>%
 
 ## Breakage
 
-Johnston 1977: "40-50% [of gross carbon input] is lost by distal decay". Look into Dan Smale's work for more detailed data.
-```{r extract_loss}
-# TODO
+Johnston 1977: "40-50% [of gross carbon input] is lost by distal decay" for *L. saccharina*, mostly in the fall. Pessarrodona et al 2019 found something quite different for two species of *Laminaria*, with high loss in *L. hyperborea* only in March and April. All data come from SW England. The timing of accumulation matches Kain above, with a pulse of growth in the spring, peaking March through June. In the absence of other information, it seems that winter frond loss may not be so important in *L. hyperborea*...
+```{r extract_loss, message=F}
+pessarrodona.f <- "..\\data\\Pessarrodona2019\\Biomass accumulation and loss.xlsx"
+data.ls$month_biomass <- bind_rows(
+  readxl::read_xlsx(pessarrodona.f, 1) %>% mutate(type="accumulation"),
+  readxl::read_xlsx(pessarrodona.f, 2) %>% mutate(type="loss")
+  )
+
+
+data.ls$month_biomass %>%
+  mutate(startDate=as_date(paste0("2017-", Month, "-01")),
+         totalChg=biomassChg*days_in_month(startDate)) %>%
+  ggplot(aes(startDate, totalChg, colour=Location)) + 
+  geom_jitter(width=5) + stat_smooth(se=F) + 
+  facet_grid(Species~type) +
+  labs(x="", y="Biomass change (g/month)")
+
 ```
 
 
