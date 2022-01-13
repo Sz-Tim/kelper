@@ -21,7 +21,7 @@ editor_options:
 
 # Overview
 
-This script simulates an individual population using data from the literature.
+This script processes and explores covariates available in the UK.
 
 
 ```{r setup, echo=F, include=F}
@@ -39,7 +39,6 @@ data.dir <- "..\\data\\digitized\\"
 gis.dir <- "..\\..\\0_gis\\"
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 
-data.ls <- compileDatasets(data.dir)
 site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
                    col_select=1:3, show_col_types=F) %>%
   filter(location != "Molde")
@@ -49,10 +48,14 @@ site.sf <- site.i %>% filter(!is.na(lon) & !is.na(lat)) %>%
 coast <- read_sf("../../0_gis/dataGeog/ne_10m_land.shp") %>%
   add_row(read_sf("../../0_gis/dataGeog/ne_10m_minor_islands.shp")) %>%
   st_crop(UK_bbox)
+
+data.ls <- compileDatasets(data.dir)
 ```
 
 ```{r loadCovariates, message=F, warning=F}
-covariate.ls <- list(
+covars.ls <- list(
+  depth=dir(paste0(gis.dir, "dataGeog"), "Bathymetry", full.names=T) %>%
+    raster() %>% crop(UK_bbox),
   fetch=dir(paste0(gis.dir, "dataGeog"), "^FetchUK_200m", full.names=T) %>% 
     read_csv(show_col_types=F) %>% st_as_sf(coords=c("OSEast", "OSNorth")) %>% 
     st_set_crs(27700) %>% st_transform(4326),
@@ -67,23 +70,153 @@ covariate.ls <- list(
     raster() %>% crop(UK_bbox),
   irrad_longterm=dir(paste0(gis.dir, "dataEnv\\irradience"), 
                      "POWER_Regional_Climatology", full.names=T) %>%
-    read_csv(skip=10) %>% st_as_sf(coords=c("LON", "LAT"), crs=4326),
+    read_csv(skip=10, show_col_types=F) %>% 
+    st_as_sf(coords=c("LON", "LAT"), crs=4326),
   irrad_monthly=dir(paste0(gis.dir, "dataEnv\\irradience"), 
                      "POWER_Regional_monthly", full.names=T) %>%
-    read_csv(skip=10) %>% 
+    read_csv(skip=10, show_col_types=F) %>% 
     filter(JAN != -999) %>% select(-ANN) %>%
     group_by(PARAMETER, YEAR) %>% mutate(id=row_number()) %>% ungroup %>%
     pivot_longer(5:16, names_to="MONTH", values_to="PAR") %>%
     st_as_sf(coords=c("LON", "LAT"), crs=4326),
   irrad_daily=dir(paste0(gis.dir, "dataEnv\\irradience"), 
                      "POWER_Regional_Daily", full.names=T) %>%
-    read_csv(skip=10) %>% 
-    mutate(DATE=lubridate::ymd(paste(YEAR, MO, DY, sep="-"))) %>% 
+    map_dfr(., ~read_csv(.x, skip=10, show_col_types=F)) %>% 
+    mutate(DATE=case_when(is.na(DOY) ~ ymd(paste(YEAR, MO, DY, sep="-")),
+                          !is.na(DOY) ~ as_date(DOY, 
+                                                origin=paste0(YEAR,"-01-01")))) %>% 
+    group_by(DATE) %>% mutate(id=row_number()) %>% ungroup %>%
+    pivot_longer(contains("_PAR_"), names_to="PARAMETER", values_to="PAR") %>%
     st_as_sf(coords=c("LON", "LAT"), crs=4326)
 )
 
-irrad.grid <- (st_bbox(covariate.ls$irrad_longterm) + .25*c(-1,-1,1,1)) %>%
+irrad.grid <- (st_bbox(covars.ls$irrad_longterm) + .25*c(-1,-1,1,1)) %>%
   st_make_grid(cellsize=c(0.5, 0.5)) %>% st_sf(id=1:length(.))
 
+covars.ls$irrad_growing.month <- covars.ls$irrad_monthly %>%
+  filter(MONTH %in% c("FEB", "MAR", "APR", "MAY", "JUN")) %>%
+  group_by(PARAMETER, YEAR, id) %>%
+  summarise(PAR=sum(PAR)) %>%
+  group_by(PARAMETER, id) %>%
+  summarise(mnPAR=mean(PAR), sdPAR=sd(PAR)) %>%
+  st_join(irrad.grid, .)
+
+covars.ls$irrad_growing.day <- covars.ls$irrad_daily %>%
+  filter(MO %in% 2:6) %>%
+  group_by(PARAMETER, YEAR, id) %>%
+  summarise(PAR=sum(PAR)) %>%
+  group_by(PARAMETER, id) %>%
+  summarise(mnPAR=mean(PAR), sdPAR=sd(PAR)) %>%
+  st_join(irrad.grid, .)
+
+```
+
+
+
+
+# EDA maps
+
+PAR doesn't seem to match the pattern from Smith 2021... This is the source listed, but there isn't a specific layer listed and there are several plausible options. Since values were converted from surface irradience to PAR (Reis & Ribiero 2020), it's unlikely they directly used either of the PAR layers available. 
+```{r overall_maps}
+plot(covars.ls$sst_day, main="SST (Day)")
+plot(covars.ls$sst_night, main="SST (Night)")
+plot(covars.ls$chla, main="chl a")
+
+covars.ls$irrad_longterm %>% 
+  st_join(irrad.grid, .) %>%
+  ggplot() + geom_sf(aes(fill=ANN), alpha=0.7, colour="grey30") + 
+  geom_sf(data=coast) + 
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+
+covars.ls$irrad_growing.month %>%
+  ggplot() + geom_sf(aes(fill=mnPAR), alpha=0.7, colour="grey40") + 
+  geom_sf(data=coast) +
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+
+covars.ls$irrad_growing.month %>%
+  ggplot() + geom_sf(aes(fill=sdPAR), alpha=0.7, colour="grey40") + 
+  geom_sf(data=coast) + 
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+
+covars.ls$irrad_growing.month %>%
+  ggplot() + geom_sf(aes(fill=sdPAR/mnPAR), alpha=0.7, colour="grey40") + 
+  geom_sf(data=coast) + 
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+
+covars.ls$irrad_growing.day %>%
+  ggplot() + geom_sf(aes(fill=mnPAR), alpha=0.7, colour="grey40") + 
+  geom_sf(data=coast) +
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+
+st_join(site.sf, irrad.grid) %>%
+  left_join(as_tibble(covars.ls$irrad_longterm %>% 
+                        st_join(irrad.grid, .)), by="id") %>%
+  ggplot() + geom_sf(data=coast) + 
+  geom_sf(aes(colour=log(ANN))) + scale_colour_viridis_c() + 
+  facet_wrap(~PARAMETER)
+
+
+covars.ls$irrad_monthly %>% filter(YEAR==2014) %>% 
+  filter(MONTH %in% c("JUL", "AUG")) %>%
+  mutate(MONTH=factor(MONTH, levels=unique(covars.ls$irrad_monthly$MONTH))) %>%
+  st_join(irrad.grid, .) %>%
+  ggplot() + geom_sf(data=coast) + 
+  geom_sf(aes(fill=PAR), alpha=0.7, colour="grey40") +
+  scale_fill_viridis_c() + 
+  facet_grid(PARAMETER~MONTH)
+
+covars.ls$irrad_daily %>% 
+  filter(DATE > "2017-05-10" & DATE < "2017-06-15") %>%
+  filter(grepl("ALLSKY", PARAMETER)) %>%
+  st_join(irrad.grid, .) %>%
+  ggplot() + geom_sf(data=coast) + 
+  geom_sf(aes(fill=PAR), alpha=0.7, colour="grey40") +
+  scale_fill_viridis_c() + 
+  facet_wrap(~DATE, ncol=7) +
+  labs(title="Smith dates: Daily all sky PAR")
+
+covars.ls$irrad_daily %>% 
+  filter(DATE > "2017-05-10" & DATE < "2017-06-15") %>%
+  filter(grepl("ALLSKY", PARAMETER)) %>%
+  group_by(id) %>% 
+  summarise(PAR=mean(PAR)) %>%
+  st_join(irrad.grid, .) %>%
+  ggplot() + geom_sf(data=coast) + 
+  geom_sf(aes(fill=PAR), alpha=0.7, colour="grey40") +
+  scale_fill_viridis_c() +
+  labs(title="Smith dates: Mean PAR")
+```
+
+
+```{r smith_data}
+data.ls$depth_metric %>% 
+  mutate(location=factor(location, 
+                         levels=unique(data.ls$depth_metric$location))) %>% 
+  ggplot(aes(depth, mean, ymin=mean-2*se, ymax=mean+2*se, colour=location)) +
+  geom_pointrange() + geom_line() +
+  facet_wrap(~paste(scale, metric, sep=": "), scales="free_y") +
+  scale_colour_brewer(type="div", palette=3)
+
+data.ls$day_PAR %>%
+  mutate(location=factor(location, 
+                         levels=unique(data.ls$depth_metric$location))) %>% 
+  ggplot(aes(day, PAR, colour=location)) + 
+  geom_point() + stat_smooth(se=F) +  
+  scale_colour_brewer(type="div", palette=3)
+
+data.ls$depth_metric %>% filter(scale != "HOBO") %>%
+  left_join(.,
+            data.ls$depth_metric %>% filter(scale == "HOBO") %>%
+              select(depth, metric, mean, location) %>%
+              mutate(metric=str_replace_all(metric, " ", "_")) %>%
+              pivot_wider(names_from="metric", values_from="mean"), 
+            by=c("depth", "location")) %>%
+  mutate(location=factor(location, 
+                         levels=unique(data.ls$depth_metric$location))) %>% 
+  ggplot(aes(light_intensity, mean, ymin=mean-2*se, ymax=mean+2*se,
+             colour=location)) + 
+  geom_pointrange() + geom_line() +
+  facet_wrap(~paste(scale, metric, sep=": "), scales="free_y") +
+  scale_colour_brewer(type="div", palette=3)
 ```
 
