@@ -30,7 +30,7 @@ knitr::opts_knit$set(root.dir=rprojroot::find_rstudio_root_file())
 ```
 
 ```{r workspace, echo=F, include=F, message=F, warning=F}
-pkgs <- c("geoTS", "lubridate", "tidyverse", "sf", "brms")
+pkgs <- c("lubridate", "tidyverse", "sf", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw())
@@ -120,41 +120,41 @@ subcanopy <- data.ls$day_growthStipe %>% filter(ageGroup > 0 & ageGroup < 3) %>%
   mutate(dailyGrowth=growthStipe/7, stage="subcanopy", date=as_date(day))
 canopy <- data.ls$day_growthStipe %>% filter(ageGroup > 2) %>%
   mutate(dailyGrowth=growthStipe/7, stage="canopy", date=as_date(day))
-recruits.hm <- haRmonics(y=recruits$dailyGrowth,
-                         ts=recruits$day,
-                         method="hants",
-                         low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
-                         lenBasePeriod=365, numFreq=1, delta=0.1)
-subcanopy.hm <- haRmonics(y=subcanopy$dailyGrowth,
-                          ts=subcanopy$day,
-                          method="hants",
-                          low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
-                          lenBasePeriod=365, numFreq=1, delta=0.1)
-canopy.hm <- haRmonics(y=canopy$dailyGrowth,
-                       ts=canopy$day,
-                       method="hants",
-                       low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
-                       lenBasePeriod=365, numFreq=1, delta=0.1)
-
-
-hm.1 <- list(a=recruits.hm$a.coef, b=recruits.hm$b.coef, 
-             fit=recruits.hm$fitted, 
-             phase=recruits.hm$phase, amp=recruits.hm$amplitude)
-hm.2 <- list(a=subcanopy.hm$a.coef, b=subcanopy.hm$b.coef, 
-             fit=subcanopy.hm$fitted, 
-             phase=subcanopy.hm$phase, amp=subcanopy.hm$amplitude)
-hm.3 <- list(a=canopy.hm$a.coef, b=canopy.hm$b.coef, 
-             fit=canopy.hm$fitted, 
-             phase=canopy.hm$phase, amp=canopy.hm$amplitude)
+# recruits.hm <- haRmonics(y=recruits$dailyGrowth,
+#                          ts=recruits$day,
+#                          method="hants",
+#                          low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
+#                          lenBasePeriod=365, numFreq=1, delta=0.1)
+# subcanopy.hm <- haRmonics(y=subcanopy$dailyGrowth,
+#                           ts=subcanopy$day,
+#                           method="hants",
+#                           low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
+#                           lenBasePeriod=365, numFreq=1, delta=0.1)
+# canopy.hm <- haRmonics(y=canopy$dailyGrowth,
+#                        ts=canopy$day,
+#                        method="hants",
+#                        low=-20, high=20, fitErrorTol=0.5, degreeOverDeter=1,
+#                        lenBasePeriod=365, numFreq=1, delta=0.1)
+# 
+# 
+# hm.1 <- list(a=recruits.hm$a.coef, b=recruits.hm$b.coef, 
+#              fit=recruits.hm$fitted, 
+#              phase=recruits.hm$phase, amp=recruits.hm$amplitude)
+# hm.2 <- list(a=subcanopy.hm$a.coef, b=subcanopy.hm$b.coef, 
+#              fit=subcanopy.hm$fitted, 
+#              phase=subcanopy.hm$phase, amp=subcanopy.hm$amplitude)
+# hm.3 <- list(a=canopy.hm$a.coef, b=canopy.hm$b.coef, 
+#              fit=canopy.hm$fitted, 
+#              phase=canopy.hm$phase, amp=canopy.hm$amplitude)
 
 day_seq <- seq(ymd("1970-01-01"), ymd("1970-12-31"), by="day")
 y <- (yday(day_seq)-1)/c(364,365)[leap_year(day_seq)+1]
-pred.1 <- mean(hm.1$fit) + hm.1$a * cos(2*pi*y) + hm.1$b * sin(2*pi*y)
-pred.2 <- mean(hm.2$fit) + hm.2$a * cos(2*pi*y) + hm.2$b * sin(2*pi*y)
-pred.3 <- mean(hm.3$fit) + hm.3$a * cos(2*pi*y) + hm.3$b * sin(2*pi*y)
-
-cat("Maximum expected annual growth in stipe length (mm) harmonic model:\n", 
-    round(c(sum(pred.1, na.rm=T), sum(pred.2, na.rm=T), sum(pred.3, na.rm=T))))
+# pred.1 <- mean(hm.1$fit) + hm.1$a * cos(2*pi*y) + hm.1$b * sin(2*pi*y)
+# pred.2 <- mean(hm.2$fit) + hm.2$a * cos(2*pi*y) + hm.2$b * sin(2*pi*y)
+# pred.3 <- mean(hm.3$fit) + hm.3$a * cos(2*pi*y) + hm.3$b * sin(2*pi*y)
+# 
+# cat("Maximum expected annual growth in stipe length (mm) harmonic model:\n", 
+#     round(c(sum(pred.1, na.rm=T), sum(pred.2, na.rm=T), sum(pred.3, na.rm=T))))
 
 pred.1 <- predict(loess(dailyGrowth ~ day, data=recruits), 
         data.frame(day=yday(day_seq)))
