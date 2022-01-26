@@ -390,7 +390,7 @@ data.ls$lengthStipe_NperSqM %>%
 
 
 Alternatively, we can use allometric relationships above to convert from stipe length to frond weight. This is useful as harvesting biomass, but we really need to get from frond weight to frond area index.
-```{r densitylenStipe_wtFrond, results=F}
+```{r densitylenStipe_wtFrond, eval=FALSE, include=FALSE, results=F}
 lenStipe_wtStipe <- brm(log(weightStipe) ~ log(lengthStipe),
                         data=data.ls$lengthStipe_weightStipe)
 wtStipe_wtFrond <- brm(log(weightFrond) ~ log(weightStipe), 
@@ -419,7 +419,7 @@ data.ls$lengthStipe_NperSqM <- data.ls$lengthStipe_NperSqM %>%
 
 ```
 
-```{r density_wtFrond, message=F}
+```{r density_wtFrond, message=F, eval=F}
 data.ls$lengthStipe_NperSqM %>% 
   mutate(lengthBin=lengthStipe %/% 100 * 100 + 50) %>%
   group_by(location, depth, lengthBin) %>%
@@ -500,7 +500,7 @@ data.ls$lengthStipe_NperSqM %>%
 ```
 
 And further, we can estimate frond area from the frond weight. **Depth should be added here.**
-```{r densitylenStipe_areaFrond, results=F}
+```{r densitylenStipe_areaFrond, results=F, eval=F}
 lenStipe_wtStipe <- brm(log(weightStipe) ~ log(lengthStipe),
                         data=data.ls$lengthStipe_weightStipe)
 wtStipe_wtFrond <- brm(log(weightFrond) ~ log(weightStipe), 
@@ -531,7 +531,7 @@ data.ls$lengthStipe_NperSqM <- data.ls$lengthStipe_NperSqM %>%
          areaFrond_q90=apply(exp(estFrondArea), 2, quantile, probs=0.9))
 ```
 
-```{r density_areaFrond, message=F}
+```{r density_areaFrond, message=F, eval=F}
 data.ls$lengthStipe_NperSqM %>% 
   mutate(lengthBin=lengthStipe %/% 100 * 100 + 50) %>%
   group_by(location, depth, lengthBin) %>%
