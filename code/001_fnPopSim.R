@@ -111,7 +111,7 @@ simulatePopulation_3Seasons <- function(pars, N0=c(1, 1, 1)) {
 simulatePopulation_2Seasons <- function(pars, N0=c(1, 1, 1)) {
   
   # calculate global parameters
-  PAR <- pars$env$PAR_surface * exp(-pars$env$kd * pars$depth)
+  PAR <- pars$env$PAR_surface * exp(-pars$env$KD_mn * pars$depth)
   logWtStipe.stage <- predict(pars$lenStipe_wtStipe,
                               tibble(logLenStipe=log(pars$sizeClassMdpts)), ndraws=5)[,1]
   K_FAI <- exp(predict(pars$depth_FAI, tibble(logPAR=log(PAR)), ndraws=5)[1,1])
