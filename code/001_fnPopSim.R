@@ -6,7 +6,7 @@
 # Population simulation functions
 
 
-simulatePopulation <- function(pars, N0=c(1, 1, 1)) {
+simulatePopulation_3Seasons <- function(pars, N0=c(1, 1, 1)) {
   
   # calculate global parameters
   logWtStipe.stage <- predict(pars$lenStipe_wtStipe,
@@ -15,7 +15,7 @@ simulatePopulation <- function(pars, N0=c(1, 1, 1)) {
   K_N <- exp(predict(pars$depth_N, tibble(depth=pars$depth, stage="canopy"), ndraws=5)[1,1])
   
   # storage
-  N <- FAI <- array(dim=c(pars$N_stages, pars$tmax, pars$N_seasons))
+  N <- FAI <- array(dim=c(pars$N_stages, pars$tmax, 3))
   N[,1,1] <- N0
   logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
                               newdata=tibble(logWtStipe=logWtStipe.stage, 
@@ -24,17 +24,17 @@ simulatePopulation <- function(pars, N0=c(1, 1, 1)) {
                            tibble(depth=pars$depth, 
                                   logWtFrond=log(N[,1,1]*exp(logWtFrond.stage))), ndraws=5)[,1])
   harvest <- rep(0, pars$tmax) # log(grams of frond)
-  kappa <- array(dim=c(pars$tmax, pars$N_seasons, 2))
+  kappa <- array(dim=c(pars$tmax, 3, 2))
   
   # transition matrices
-  A <- map(1:pars$N_seasons, ~matrix(0, pars$N_stages, pars$N_stages)) %>%
+  A <- map(1:3, ~matrix(0, pars$N_stages, pars$N_stages)) %>%
     setNames(c("spring", "fall", "winter"))
   
   
   # simulation loop
   for(i in 1:pars$tmax) {
 
-    #-- first season
+    #-- first season: growth
     # parameters
     kappa[i,1,] <- c(min(1, FAI[3,i,1]/K_FAI), min(1, N[3,i,1]/K_N))
     growRate_i <- pars$growthRateStipeMax * (1-kappa[i,1,1])^pars$growthRateDensityStipeShape
@@ -58,9 +58,8 @@ simulatePopulation <- function(pars, N0=c(1, 1, 1)) {
                                logAreaFrond.stage, pars)
     
     
-    #-- second season
+    #-- harvest
     # parameters
-    
     kappa[i,2,] <- c(min(1, FAI[3,i,2]/K_FAI), min(1, N[3,i,2]/K_N))
     # survival & harvest
     diag(A$fall) <- pars$survRate
@@ -84,7 +83,7 @@ simulatePopulation <- function(pars, N0=c(1, 1, 1)) {
     FAI[,i,3] <- diag(A$fall) * FAI[,i,2]
     
     
-    #-- third season
+    #-- second season: loss + reproduction
     if(i < pars$tmax) {
       # parameters
       
@@ -101,6 +100,110 @@ simulatePopulation <- function(pars, N0=c(1, 1, 1)) {
   }
   
   return(list(N=N, FAI=FAI, harvest=harvest, kappa=kappa))
+}
+
+
+
+
+
+
+
+simulatePopulation_2Seasons <- function(pars, N0=c(1, 1, 1)) {
+  
+  # calculate global parameters
+  PAR <- pars$env$PAR_surface * exp(-pars$env$kd * pars$depth)
+  logWtStipe.stage <- predict(pars$lenStipe_wtStipe,
+                              tibble(logLenStipe=log(pars$sizeClassMdpts)), ndraws=5)[,1]
+  K_FAI <- exp(predict(pars$depth_FAI, tibble(logPAR=log(PAR)), ndraws=5)[1,1])
+  K_N <- exp(predict(pars$depth_N, tibble(PAR_atDepth=PAR, stage="canopy"), ndraws=5)[1,1])
+  
+  # storage
+  N <- FAI <- array(dim=c(pars$N_stages, pars$tmax, 3))
+  N[,1,1] <- N0
+  logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
+                              newdata=tibble(logWtStipe=logWtStipe.stage, 
+                                             propClear=1), ndraws=5)[,1]
+  FAI[,1,1] <- exp(predict(pars$wtFrond_areaFrond,
+                           tibble(PAR_atDepth=PAR, 
+                                  logWtFrond=log(N[,1,1]*exp(logWtFrond.stage))), ndraws=5)[,1])
+  harvest <- rep(0, pars$tmax) # log(grams of frond)
+  kappa <- array(dim=c(pars$tmax, 3, 2))
+  
+  # transition matrices
+  A <- map(1:2, ~matrix(0, pars$N_stages, pars$N_stages)) %>%
+    setNames(c("growing", "nongrowing"))
+  
+  
+  # simulation loop
+  for(i in 1:pars$tmax) {
+    
+    #-- first season: 
+    # parameters
+    kappa[i,1,] <- c(min(1, FAI[3,i,1]/K_FAI), min(1, N[3,i,1]/K_N))
+    growRate_i <- pars$growthRateStipeMax * (1-kappa[i,1,1])^pars$growthRateDensityStipeShape
+    prGrowToNext <- growRate_i/(pars$sizeClassLimits-lag(pars$sizeClassLimits))[-1]
+    # growth
+    A[[1]][2,1] <- pars$survRate[1]*prGrowToNext[1]
+    A[[1]][3,2] <- pars$survRate[2]*prGrowToNext[2]
+    # survival
+    A[[1]][1,1] <- pars$survRate[1] - A[[1]][2,1]
+    A[[1]][2,2] <- pars$survRate[2] - A[[1]][3,2]
+    A[[1]][3,3] <- pars$survRate[3]
+    # update population
+    logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
+                                newdata=tibble(logWtStipe=logWtStipe.stage, 
+                                               propClear=1-kappa[i,1,1]), ndraws=5)[,1]
+    logAreaFrond.stage <- predict(pars$wtFrond_areaFrond,
+                                  tibble(PAR_atDepth=PAR,
+                                         logWtFrond=logWtFrond.stage), ndraws=5)[,1]
+    N[,i,2] <- A[[1]] %*% N[,i,1]
+    FAI[,i,2] <- growFrondArea(FAI[,i,1], N[,i,1], A[[1]], kappa[i,1,1],
+                               logAreaFrond.stage, pars)
+    
+    
+    #-- harvest
+    # parameters
+    kappa[i,2,] <- c(min(1, FAI[3,i,2]/K_FAI), min(1, N[3,i,2]/K_N))
+    # harvest
+    if(i%%pars$freqHarvest==0) {
+      stipeBiomass <- ifelse(pars$harvestTarget %in% c("all", "stipe"),
+                             sum(exp(logWtStipe.stage) * N[,i,2]),
+                             0)
+      frondBiomass <- ifelse(pars$harvestTarget %in% c("all", "frond"),
+                             sum(exp(predict(pars$areaFrond_wtFrond,
+                                             tibble(PAR_atDepth=PAR, 
+                                                    logAreaFrond=log(FAI[,i,2])), 
+                                             ndraws=5)[,1])),
+                             0)
+      harvest[i] <- pars$prFullHarvest * (stipeBiomass + frondBiomass)
+      
+      
+      # update population
+      N[,i,3] <- diag(1-pars$prFullHarvest, 3, 3) %*% N[,i,2]
+      FAI[,i,3] <- (1-pars$prFullHarvest) * FAI[,i,2]
+    } else {
+      N[,i,3] <- N[,i,2]
+      FAI[,i,3] <- FAI[,i,2]
+    }
+    
+    
+    #-- non-growing season
+    if(i < pars$tmax) {
+      # parameters
+      kappa[i,3,] <- c(min(1, FAI[3,i,3]/K_FAI), min(1, N[3,i,3]/K_N))
+      # survival
+      diag(A[[2]]) <- pars$survRate
+      # reproduction
+      A[[2]][1,3] <- pars$settlementRateBg*(1-max(kappa[i,3,]))
+      # update population
+      N[,i+1,1] <- A[[2]] %*% N[,i,3]
+      FAI[,i+1,1] <- FAI[,i,3] * pmax(0, (diag(A[[2]]) - pars$lossRate))
+    }
+    
+  }
+  
+  return(list(N=N, FAI=FAI, harvest=harvest, kappa=kappa,
+              K_FAI=K_FAI, K_N=K_N, PAR=PAR))
 }
 
 
