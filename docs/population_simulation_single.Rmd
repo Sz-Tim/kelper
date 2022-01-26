@@ -30,20 +30,145 @@ knitr::opts_knit$set(root.dir=rprojroot::find_rstudio_root_file())
 ```
 
 ```{r workspace, echo=F, include=F, message=F, warning=F}
-pkgs <- c("lubridate", "tidyverse", "sf", "brms")
+pkgs <- c("raster", "lubridate", "tidyverse", "sf", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
-theme_set(theme_bw())
+theme_set(theme_bw()); options(mc.cores=4)
 
+gis.dir <- "..\\..\\00_gis\\"
+UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 data.dir <- "..\\data\\digitized\\"
 data.ls <- compileDatasets(data.dir)
 
 site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
                    col_select=1:3, show_col_types=F)
 
-rerun_modelFits <- FALSE
+rerun_modelFits <- T
+PAR_datasource <- c("MODIS", "POWER")[1]
 ```
 
+
+
+```{r covariates}
+covars.ls <- list(
+  fetch=dir(paste0(gis.dir, "dataGeog"), "^FetchUK_200m", full.names=T) %>% 
+    read_csv(show_col_types=F) %>% st_as_sf(coords=c("OSEast", "OSNorth")) %>% 
+    st_set_crs(27700) %>% st_transform(4326),
+  sst_day=dir(paste0(gis.dir, "dataEnv\\climate"), 
+              "MODISA_L3m_SST_Monthly", full.names=T) %>%
+    raster() %>% crop(UK_bbox),
+  sst_night=dir(paste0(gis.dir, "dataEnv\\climate"), 
+                "MODISA_L3m_NSST_Monthly", full.names=T) %>%
+    raster() %>% crop(UK_bbox),
+  chla=dir(paste0(gis.dir, "dataEnv\\chla"), 
+           "MODISA_L3m_CHL", full.names=T) %>%
+    raster() %>% crop(UK_bbox),
+  KD_mn=dir(paste0(gis.dir, "dataEnv\\attenuation"), 
+                 "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
+    map(raster) %>% stack %>% crop(UK_bbox) %>% calc(mean, na.rm=T),
+  KD_sd=dir(paste0(gis.dir, "dataEnv\\attenuation"), 
+                 "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
+    map(raster) %>% stack %>% crop(UK_bbox) %>% calc(sd, na.rm=T),
+  PAR_mn=dir(paste0(gis.dir, "dataEnv\\light"), 
+                 "MODISA_L3m_PAR", full.names=T) %>%
+    map(raster) %>% stack %>% crop(UK_bbox) %>% calc(mean, na.rm=T),
+  PAR_sd=dir(paste0(gis.dir, "dataEnv\\light"), 
+                 "MODISA_L3m_PAR", full.names=T) %>%
+    map(raster) %>% stack %>% crop(UK_bbox) %>% calc(sd, na.rm=T),
+  irrad_longterm=dir(paste0(gis.dir, "dataEnv\\light"), 
+                     "POWER_Regional_Climatology", full.names=T) %>%
+    read_csv(skip=10, show_col_types=F) %>% 
+    st_as_sf(coords=c("LON", "LAT"), crs=4326),
+  irrad_monthly=dir(paste0(gis.dir, "dataEnv\\light"), 
+                     "POWER_Regional_monthly", full.names=T) %>%
+    read_csv(skip=10, show_col_types=F) %>% 
+    filter(JAN != -999) %>% select(-ANN) %>%
+    group_by(PARAMETER, YEAR) %>% mutate(id=row_number()) %>% ungroup %>%
+    pivot_longer(5:16, names_to="MONTH", values_to="PAR") %>%
+    st_as_sf(coords=c("LON", "LAT"), crs=4326),
+  irrad_daily=dir(paste0(gis.dir, "dataEnv\\light"), 
+                     "POWER_Regional_Daily", full.names=T) %>%
+    map_dfr(., ~read_csv(.x, skip=10, show_col_types=F)) %>% 
+    mutate(DATE=case_when(is.na(DOY) ~ ymd(paste(YEAR, MO, DY, sep="-")),
+                          !is.na(DOY) ~ as_date(DOY, 
+                                                origin=paste0(YEAR,"-01-01")))) %>% 
+    group_by(DATE) %>% mutate(id=row_number()) %>% ungroup %>%
+    pivot_longer(contains("_PAR_"), names_to="PARAMETER", values_to="PAR") %>%
+    st_as_sf(coords=c("LON", "LAT"), crs=4326)
+)
+
+irrad.grid <- (st_bbox(covars.ls$irrad_longterm) + .25*c(-1,-1,1,1)) %>%
+  st_make_grid(cellsize=c(0.5, 0.5)) %>% st_sf(id=1:length(.))
+
+covars.ls$irrad_growing.month <- covars.ls$irrad_monthly %>%
+  filter(MONTH %in% c("JAN", "FEB", "MAR", "APR", "MAY", "JUN")) %>%
+  group_by(PARAMETER, YEAR, id) %>%
+  summarise(PAR=mean(PAR)) %>%
+  group_by(PARAMETER, id) %>%
+  summarise(mnPAR=mean(PAR), sdPAR=sd(PAR)) %>%
+  st_join(irrad.grid, .) %>%
+  filter(grepl("ALLSKY", PARAMETER))
+
+for(i in seq_along(data.ls)) {
+  if(any(!is.na(data.ls[[i]]$lat))) {
+    i_sf <- data.ls[[i]] %>% 
+      filter(!is.na(lat) & !is.na(lon)) %>%
+      st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
+      mutate(sst_day=raster::extract(covars.ls$sst_day, ., 
+                                     fun=mean, small=T, method="bilinear"),
+             sst_night=raster::extract(covars.ls$sst_night, ., 
+                                       fun=mean, small=T, method="bilinear"),
+             chla=raster::extract(covars.ls$chla, ., 
+                                  fun=mean, small=T, method="bilinear"),
+             KD_mn=raster::extract(covars.ls$KD_mn, ., 
+                                   fun=mean, small=T, method="bilinear"),
+             KD_sd=raster::extract(covars.ls$KD_sd, ., 
+                                   fun=mean, small=T, method="bilinear"),
+             PAR_mn=raster::extract(covars.ls$PAR_mn, ., 
+                                    fun=mean, small=T, method="bilinear"),
+             PAR_sd=raster::extract(covars.ls$PAR_sd, ., 
+                                    fun=mean, small=T, method="bilinear"),
+             PAR_POWER=st_join(., 
+                                 covars.ls$irrad_growing.month, 
+                                 left=T, join=st_nearest_feature)$mnPAR)
+    data.ls[[i]] <- left_join(data.ls[[i]], st_drop_geometry(i_sf))
+    if(any(!is.na(data.ls[[i]]$depth))) {
+      data.ls[[i]] <- data.ls[[i]] %>%
+        mutate(PAR_atDepth_POWER=PAR_POWER * exp(-KD_mn * depth),
+               PAR_atDepth_MODIS=PAR_mn * exp(-KD_mn * depth))
+      data.ls[[i]]$PAR_atDepth <- data.ls[[i]][[paste0("PAR_atDepth_", PAR_datasource)]]
+    }
+  }
+}
+
+fetch_thirds <- quantile(covars.ls$fetch$fetchsum, probs=(1:2)/3)
+site.sf <- site.i %>% 
+  filter(!is.na(lat) & !is.na(lon)) %>%
+  st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
+  mutate(sst_day=raster::extract(covars.ls$sst_day, ., 
+                                 fun=mean, small=T, method="bilinear"),
+         sst_night=raster::extract(covars.ls$sst_night, ., 
+                                   fun=mean, small=T, method="bilinear"),
+         chla=raster::extract(covars.ls$chla, ., 
+                              fun=mean, small=T, method="bilinear"),
+         KD_mn=raster::extract(covars.ls$KD_mn, ., 
+                               fun=mean, small=T, method="bilinear"),
+         KD_sd=raster::extract(covars.ls$KD_sd, ., 
+                               fun=mean, small=T, method="bilinear"),
+         PAR_mn=raster::extract(covars.ls$PAR_mn, ., 
+                                fun=mean, small=T, method="bilinear"),
+         PAR_sd=raster::extract(covars.ls$PAR_sd, ., 
+                                fun=mean, small=T, method="bilinear"),
+         PAR_POWER=st_join(., 
+                           covars.ls$irrad_growing.month, 
+                           left=T, join=st_nearest_feature)$mnPAR,
+         fetch=st_join(., 
+                       covars.ls$fetch, 
+                       left=T, join=st_nearest_feature)$fetchsum,
+         fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
+                            between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
+                            fetch > fetch_thirds[2] ~ 3))
+```
 
 
 
@@ -72,24 +197,24 @@ if(rerun_modelFits) {
   saveRDS(wtStipe_wtFrond.kappa, "temp/brms_wtStipe_wtFrond_kappa.rds")
   
   # Frond weight (g) -> frond area (cm2 -> m2) : depth-dependent
-  wtFrond_areaFrond.depth <- data.ls$weightFrond_areaFrond %>%
+  wtFrond_areaFrond.PAR_atDepth <- data.ls$weightFrond_areaFrond %>%
     mutate(logWtFrond=log(weightFrond),
            logAreaFrond=log(areaFrond/1e4)) %>%
-    brm(logAreaFrond ~ logWtFrond*depth, prior=prior(normal(0,5)), data=.)
-  saveRDS(wtFrond_areaFrond.depth, "temp/brms_wtFrond_areaFrond_depth.rds")
+    brm(logAreaFrond ~ logWtFrond*PAR_atDepth, prior=prior(normal(0,5)), data=.)
+  saveRDS(wtFrond_areaFrond.PAR_atDepth, "temp/brms_wtFrond_areaFrond_PARdepth.rds")
   
   # Frond area (cm2 -> m2) -> frond weight (g) : depth-dependent
-  areaFrond_wtFrond.depth <- data.ls$weightFrond_areaFrond %>%
+  areaFrond_wtFrond.PAR_atDepth <- data.ls$weightFrond_areaFrond %>%
     mutate(logWtFrond=log(weightFrond),
            logAreaFrond=log(areaFrond/1e4)) %>%
-    brm(logWtFrond ~ logAreaFrond*depth, prior=prior(normal(0,5)), data=.)
-  saveRDS(areaFrond_wtFrond.depth, "temp/brms_areaFrond_wtFrond_depth.rds")
+    brm(logWtFrond ~ logAreaFrond*PAR_atDepth, prior=prior(normal(0,5)), data=.)
+  saveRDS(areaFrond_wtFrond.PAR_atDepth, "temp/brms_areaFrond_wtFrond_PARdepth.rds")
   
 } else {
   lenStipe_wtStipe <- readRDS("temp/brms_lenStipe_wtStipe.rds")
   wtStipe_wtFrond.kappa <- readRDS("temp/brms_wtStipe_wtFrond_kappa.rds")
-  wtFrond_areaFrond.depth <- readRDS("temp/brms_wtFrond_areaFrond_depth.rds")
-  areaFrond_wtFrond.depth <- readRDS("temp/brms_areaFrond_wtFrond_depth.rds")
+  wtFrond_areaFrond.PAR_atDepth <- readRDS("temp/brms_wtFrond_areaFrond_PARdepth.rds")
+  areaFrond_wtFrond.PAR_atDepth <- readRDS("temp/brms_areaFrond_wtFrond_PARdepth.rds")
 }
 
 # Plots
@@ -99,12 +224,12 @@ p2 <- conditional_effects(wtStipe_wtFrond.kappa, effects="logWtStipe:propClear",
                           int_conditions=list(propClear=seq(0,1,0.2)))
 plot(p2, plot=F)[[1]] + scale_colour_viridis_d(option="E") +
   scale_fill_viridis_d(option="E") + ggtitle("Frond weight ~ Stipe weight")
-p3 <- conditional_effects(wtFrond_areaFrond.depth, effects="logWtFrond:depth",
-                          int_conditions=list(depth=seq(5,15,5)))
+p3 <- conditional_effects(wtFrond_areaFrond.PAR_atDepth, effects="logWtFrond:PAR_atDepth",
+                          int_conditions=list(PAR_atDepth=seq(0,20,5)))
 plot(p3, plot=F)[[1]] + scale_colour_viridis_d() +
   scale_fill_viridis_d() + ggtitle("Frond area ~ Frond weight")
-p4 <- conditional_effects(areaFrond_wtFrond.depth, effects="logAreaFrond:depth",
-                          int_conditions=list(depth=seq(5,15,5)))
+p4 <- conditional_effects(areaFrond_wtFrond.PAR_atDepth, effects="logAreaFrond:PAR_atDepth",
+                          int_conditions=list(PAR_atDepth=seq(0,20,5)))
 plot(p4, plot=F)[[1]] + scale_colour_viridis_d() +
   scale_fill_viridis_d() + ggtitle("Frond weight ~ Frond area")
 ```
@@ -112,7 +237,7 @@ plot(p4, plot=F)[[1]] + scale_colour_viridis_d() +
 
 ## Growth
 
-Stipe growth over the course of the year is decently approximated by a harmonic model using data from Kain 1977 (recovery in clearings). Data are split by age, so here I'm making some assumptions to approximate age into the height-based stages used in the model. Recruits are defined as 0-1 year olds, subcanopy as 1-3 year olds, and canopy as 3+, all limits inclusive. Thus, the boundary ages are used for both stages. We integrate under the curve to estimate the maximum annual growth in open canopy.
+Stipe growth over the course of the year is decently approximated by a harmonic model using data from Kain 1977 (recovery in clearings). Data are split by age, so here I'm making some assumptions to approximate age into the height-based stages used in the model. Recruits are defined as 0-1 year olds, subcanopy as 1-2 year olds, and canopy as 3+, all limits inclusive. Thus, the boundary ages are used for both stages. We integrate under the curve to estimate the maximum annual growth in open canopy.
 ```{r extract_growthStipeLength}
 recruits <- data.ls$day_growthStipe %>% filter(ageGroup < 2) %>%
   mutate(dailyGrowth=growthStipe/7, stage="recruits", date=as_date(day))
@@ -230,42 +355,43 @@ tibble(date=day_seq, recruits=pred.1, subcanopy=pred.2, canopy=pred.3) %>%
 There are two options for defining carrying capacity: Density of individuals, or Frond Area Index. The number of individuals relates more to space limitations, while FAI directly relates to density dependent light limitation. Both variables show semi-log linear relationships with depth, and the effect of depth on density is more pronounced in the canopy compared to the subcanopy. 
 ```{r extract_K, message=F, echo=F}
 # Option 1: FAI -- depth dependent
-depth_FAI.linlin <- lm(FAI ~ depth, data=data.ls$depth_FAI)
-depth_FAI.linlog <- lm(log(FAI) ~ depth, data=data.ls$depth_FAI)
-depth_FAI.loglin <- lm(FAI ~ log(depth), data=data.ls$depth_FAI)
-depth_FAI.loglog <- lm(log(FAI) ~ log(depth), data=data.ls$depth_FAI)
+depth_FAI.linlin <- lm(FAI ~ PAR_atDepth, data=data.ls$depth_FAI)
+depth_FAI.linlog <- lm(log(FAI) ~ PAR_atDepth, data=data.ls$depth_FAI)
+depth_FAI.loglin <- lm(FAI ~ log(PAR_atDepth), data=data.ls$depth_FAI)
+depth_FAI.loglog <- lm(log(FAI) ~ log(PAR_atDepth), data=data.ls$depth_FAI)
 MuMIn::AICc(depth_FAI.linlin, depth_FAI.loglin, 
             depth_FAI.linlog, depth_FAI.loglog) %>%
   arrange(AICc)
 
 if(rerun_modelFits) {
   depth_FAI <- data.ls$depth_FAI %>%
-    mutate(logFAI=log(FAI)) %>%
-    brm(logFAI ~ depth, prior=prior(normal(0,5)), data=.)
-  saveRDS(depth_FAI, "temp/brms_depth_FAI_K.rds")
+    mutate(logFAI=log(FAI),
+           logPAR=log(PAR_atDepth)) %>%
+    brm(logFAI ~ logPAR, prior=prior(normal(0,5)), data=.)
+  saveRDS(depth_FAI, "temp/brms_PARdepth_FAI_K.rds")
 } else {
-  depth_FAI <- readRDS("temp/brms_depth_FAI_K.rds")
+  PAR_atDepth_FAI <- readRDS("temp/brms_PARdepth_FAI_K.rds")
 }
 
 data.ls$depth_FAI %>%
-  ggplot(aes(depth, log(FAI))) + stat_smooth(method="lm") + geom_point() +
-  labs(title="FAI ~ depth", x="Depth (m)", y="log(FAI)")
+  ggplot(aes(log(PAR_atDepth), log(FAI))) + stat_smooth(method="lm") + geom_point() +
+  labs(title="FAI ~ PAR_atDepth", x="log(PAR)", y="log(FAI)")
 
 
 # Option 2: Abundance -- depth dependent
 depth_density_stages <- data.ls$lengthStipe_NperSqM %>%
   left_join(., data.ls$lengthStipe_NperSqM %>% 
-              group_by(depth) %>% 
+              group_by(PAR_atDepth) %>% 
               summarise(stipeMin=min(lengthStipe), stipeMax=max(lengthStipe),
                         top33=(stipeMax-stipeMin)*2/3 + stipeMin), 
-            by="depth") %>%
+            by="PAR_atDepth") %>%
   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
-  group_by(depth, stage) %>%
+  group_by(PAR_atDepth, stage) %>%
   summarise(NperSqM=sum(NperSqM))
-depth_density.linlin <- lm(NperSqM ~ depth * stage, data=depth_density_stages)
-depth_density.linlog <- lm(log(NperSqM) ~ depth * stage, data=depth_density_stages)
-depth_density.loglin <- lm(NperSqM ~ log(depth) * stage, data=depth_density_stages)
-depth_density.loglog <- lm(log(NperSqM) ~ log(depth) * stage, data=depth_density_stages)
+depth_density.linlin <- lm(NperSqM ~ PAR_atDepth * stage, data=depth_density_stages)
+depth_density.linlog <- lm(log(NperSqM) ~ PAR_atDepth * stage, data=depth_density_stages)
+depth_density.loglin <- lm(NperSqM ~ log(PAR_atDepth) * stage, data=depth_density_stages)
+depth_density.loglog <- lm(log(NperSqM) ~ log(PAR_atDepth) * stage, data=depth_density_stages)
 MuMIn::AICc(depth_density.linlin, depth_density.linlog, 
             depth_density.loglin, depth_density.loglog) %>% 
   arrange(AICc)
@@ -273,18 +399,18 @@ MuMIn::AICc(depth_density.linlin, depth_density.linlog,
 if(rerun_modelFits) {
   depth_N <- depth_density_stages %>%
     mutate(logN=log(NperSqM)) %>%
-    brm(logN ~ depth*stage, prior=prior(normal(0,5)), data=.)
-  saveRDS(depth_N, "temp/brms_depth_N_K.rds")
+    brm(logN ~ PAR_atDepth*stage, prior=prior(normal(0,5)), data=.)
+  saveRDS(depth_N, "temp/brms_PARdepth_N_K.rds")
 } else {
-  depth_N <- readRDS("temp/brms_depth_N_K.rds")
+  depth_N <- readRDS("temp/brms_PARdepth_N_K.rds")
 }
 
 depth_density_stages %>%
   mutate(stage=factor(stage, levels=c("canopy", "subcanopy", "recruits"))) %>%
-  ggplot(aes(depth, log(NperSqM), colour=stage)) + 
+  ggplot(aes(PAR_atDepth, NperSqM, colour=stage)) + 
   geom_point() + stat_smooth(method="lm") + 
-  scale_colour_brewer(type="qual", palette=2) + 
-  labs(title="N ~ depth", x="Depth (m)", y="log(N/m2)")
+  scale_colour_brewer(type="qual", palette=2) + scale_y_log10() +
+  labs(title="N ~ PAR_atDepth", x="PAR_atDepth (m)", y="N/m2")
 ```
 
 
@@ -295,7 +421,8 @@ Pedersen 2012 built a similar stage-based model of L. hyperborea in Norway with 
 ```{r extract_survival}
 surv.df <- data.ls$stageFrom_stageTo %>% 
   filter(stageTo=="dead") %>%
-  mutate(survRate=1-rate)
+  mutate(survRate=1-rate,
+         exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
 ```
 
 
@@ -303,22 +430,47 @@ surv.df <- data.ls$stageFrom_stageTo %>%
 ## Breakage
 
 Johnston 1977: "40-50% [of gross carbon input] is lost by distal decay" for *L. saccharina*, mostly in the fall. Pessarrodona et al 2019 found something quite different for two species of *Laminaria*, with high loss in *L. hyperborea* only in March and April. All data come from SW England. The timing of accumulation matches Kain above, with a pulse of growth in the spring, peaking March through June. In the absence of other information, it seems that winter frond loss may not be so important in *L. hyperborea*...
+
+Pessarrodona 2019 gives per-plant estimates of dry weight laminar loss (g/day) for each month. I'm not sure about the best way to apply this in the model (i.e., how to get to proportion of frond area lost) without making probably bad assumptions about total frond weight and relying on allometry.
 ```{r extract_loss, message=F}
 pessarrodona.f <- "..\\data\\Pessarrodona2019\\Biomass accumulation and loss.xlsx"
 data.ls$month_biomass <- bind_rows(
   readxl::read_xlsx(pessarrodona.f, 1) %>% mutate(type="accumulation"),
   readxl::read_xlsx(pessarrodona.f, 2) %>% mutate(type="loss")
-  )
-
+  ) %>%
+  mutate(startDate=as_date(paste0("2017-", Month, "-01")),
+         totalChg=biomassChg*days_in_month(startDate))
 
 data.ls$month_biomass %>%
-  mutate(startDate=as_date(paste0("2017-", Month, "-01")),
-         totalChg=biomassChg*days_in_month(startDate)) %>%
   ggplot(aes(startDate, totalChg, colour=Location)) + 
   geom_jitter(width=5) + stat_smooth(se=F) + 
   facet_grid(Species~type) +
   labs(x="", y="Biomass change (g/month)")
 
+# 'Sample' column is meaningless, so can't compare within individuals
+data.ls$month_biomass %>% 
+  ggplot(aes(Sample, totalChg, colour=type)) + geom_point() +
+  facet_wrap(~Species)
+
+data.ls$month_biomass %>%
+  filter(Species=="L. hyp") %>%
+  mutate(MonthAbb=factor(Month, levels=month.name, labels=month.abb),
+         Month=factor(Month, levels=month.name),
+         totalChg=biomassChg*days_in_month(as_date(paste0("2017-", Month, "-01"))),
+         season=if_else(MonthAbb %in% month.abb[1:6], "growing", "non-growing")) %>%
+  group_by(type, season, Month) %>%
+  summarise(mnChg=mean(totalChg)) %>%
+  group_by(type, season) %>%
+  summarise(totalChg=sum(mnChg)) %>%
+  group_by(season) %>%
+  pivot_wider(names_from="type", values_from="totalChg") %>%
+  mutate(diff=accumulation-loss) %>%
+  ggplot(aes(season, diff, fill=diff<0)) + 
+  geom_hline(yintercept=0) + 
+  geom_bar(stat="identity", colour="grey30") +
+  scale_fill_manual(values=c("blue3", "red3")) +
+  theme(legend.position="none") +
+  labs(x="Season", y="Expected frond biomass change (g DW)")
 ```
 
 
@@ -328,7 +480,8 @@ data.ls$month_biomass %>%
 The Pedersen 2012 model included stages for recruits, subcanopy, and canopy, and report the number of annual recruits. In some cases, the values are extremely high. My concerns about geographic differences apply here as well. 
 ```{r extract_recruitment}
 fecund.df <- data.ls$stageFrom_stageTo %>% 
-  filter(stageFrom=="canopy" & stageTo=="recruits")
+  filter(stageFrom=="canopy" & stageTo=="recruits") %>%
+  mutate(exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
 ```
 
 
@@ -343,20 +496,23 @@ fecund.df <- data.ls$stageFrom_stageTo %>%
 # Set model parameters
 
 ```{r setParams}
-depth_i <- 5
-exposure_i <- c("low", "medium", "high")[1]
+depth_i <- 2
+sites_pool <- site.sf %>% filter(!is.na(KD_mn)) %>% st_drop_geometry()
+env_i <- sites_pool %>% sample_n(1)
 pars <- setParameters(
-  prFullHarvest=0.7, freqHarvest=3, tmax=20, harvestTarget="stipe",
-  #survRate=filter(surv.df, exposure==exposure_i)$survRate^(1/3),
-  #settlementRateBg=filter(fecund.df, exposure==exposure_i)$rate,
+  prFullHarvest=0.8, freqHarvest=10, tmax=50, harvestTarget="stipe",
+  survRate=filter(surv.df, exposure==env_i$fetchCat)$survRate^(1/2),
+  settlementRateBg=filter(fecund.df, exposure==env_i$fetchCat)$rate,
+  settlementRateBg=100,
   extraPars=list(
     depth=depth_i,
+    env=env_i,
     lenStipe_wtStipe=lenStipe_wtStipe,
     wtStipe_wtFrond=wtStipe_wtFrond.kappa,
-    wtFrond_areaFrond=wtFrond_areaFrond.depth,
-    areaFrond_wtFrond=areaFrond_wtFrond.depth,
+    wtFrond_areaFrond=wtFrond_areaFrond.PAR_atDepth,
+    areaFrond_wtFrond=areaFrond_wtFrond.PAR_atDepth,
     depth_N=depth_N,
-    depth_FAI=depth_FAI)
+    depth_FAI=PAR_atDepth_FAI)
 )
  
 
@@ -366,11 +522,11 @@ pars <- setParameters(
 
 
 # Simulate population
-```{r}
-out <- simulatePopulation(pars)
+```{r simulate_single}
+out <- simulatePopulation_2Seasons(pars)
 
-out.df <- tibble(year=rep(1:pars$tmax, pars$N_seasons),
-                 month=rep(c(1,6,10), each=pars$tmax),
+out.df <- tibble(year=rep(1:pars$tmax, 3),
+                 month=rep(c(1,6,7), each=pars$tmax),
                  date=ymd(paste0(2000+year, "-", month, "-01")),
                  FAI=c(out$FAI[3,,]),
                  N.recruits=c(out$N[1,,]),
@@ -382,29 +538,39 @@ out.df <- tibble(year=rep(1:pars$tmax, pars$N_seasons),
 
 ggplot(out.df, aes(date, N, colour=stage)) + geom_line(size=1) +
   scale_colour_brewer(type="qual", palette=2) + scale_y_log10()
+ggplot(out.df, aes(date, N, colour=stage, linetype=factor(month))) + 
+  geom_line(size=1) + geom_hline(yintercept=out$K_N) +
+  scale_colour_brewer(type="qual", palette=2) + scale_y_log10()
 
-out.df %>% filter(stage=="canopy" & month==6) %>%
-  ggplot(aes(date, FAI)) + geom_line(size=1)
+out.df %>% filter(stage=="canopy") %>%
+  ggplot(aes(date, FAI, colour=factor(month))) + geom_line(size=1) + 
+  geom_hline(yintercept=out$K_FAI) + ylim(0, NA)
 
 matplot(out$kappa[,,1], type="l", lty=1, ylim=c(0, 1), ylab="kappa_FAI")
-legend("topleft", c("winter","spring","fall"), col=1:3, lty=1)
+legend("topleft", c("Jan","pre-harvest","post-harvest"), col=1:3, lty=1)
 matplot(out$kappa[,,2], type="l", lty=1, ylim=c(0, 1), ylab="kappa_N")
-legend("topleft", c("winter","spring","fall"), col=1:3, lty=1)
+legend("topleft", c("Jan","pre-harvest","post-harvest"), col=1:3, lty=1)
 
 plot(out$harvest/1e3, type="b", xlab="Year", 
      ylab=paste0("Harvest (", pars$harvestTarget, " kg/m2)"))
 
+plot(cumsum(out$harvest/1e3), type="b", xlab="Year", 
+     ylab=paste0("Cumulative harvest (", pars$harvestTarget, " kg/m2)"))
+```
 
 
-
+```{r simulate_iterations}
 library(furrr)
 plan(multisession)
-out <- future_map(1:240, ~simulatePopulation(pars), .options=furrr_options(seed=T))
+out <- future_map(1:480, ~simulatePopulation_2Seasons(pars), 
+                  .options=furrr_options(seed=T))
 out.df <- imap_dfr(out, 
                   ~tibble(sim=.y, 
-                          year=rep(1:pars$tmax, pars$N_seasons),
-                          month=rep(c(1,6,10), each=pars$tmax),
+                          year=rep(1:pars$tmax, 3),
+                          month=rep(c(1,6,7), each=pars$tmax),
                           date=ymd(paste0(year, "-", month, "-01")),
+                          K_N=.x$K_N,
+                          K_FAI=.x$K_FAI,
                           FAI=c(.x$FAI[3,,]),
                           N.recruits=c(.x$N[1,,]),
                           N.subcanopy=c(.x$N[2,,]),
@@ -418,24 +584,30 @@ out.df %>%
   scale_colour_brewer(type="qual", palette=2) + scale_y_log10()
 out.df %>% filter(month==6) %>%
   ggplot(aes(date, N, colour=stage, group=paste0(stage, sim))) + 
+  geom_hline(aes(yintercept=K_N), alpha=0.2) +
   geom_line(alpha=0.1, size=1) +
   scale_colour_brewer(type="qual", palette=2) + scale_y_log10()
 
-out.df %>% filter(stage=="canopy" & month==6) %>%
-  ggplot(aes(date, FAI, group=sim)) + geom_line(alpha=0.1, size=1) + ylim(0, NA)
+out.df %>% filter(stage=="canopy") %>%
+  ggplot(aes(date, FAI, group=sim)) + 
+  geom_hline(aes(yintercept=K_FAI), alpha=0.2) +
+  geom_line(alpha=0.25, size=1) + ylim(0, NA) + facet_grid(.~month)
 
-out.df %>% filter(stage=="canopy" & month==6) %>%
-  group_by(date) %>% 
+out.df %>% filter(stage=="canopy") %>%
+  group_by(date, month) %>% 
   summarise(FAI_mn=mean(FAI), 
             FAI_q10=quantile(FAI, 0.1),
             FAI_q25=quantile(FAI, 0.25),
             FAI_q75=quantile(FAI, 0.75),
-            FAI_q90=quantile(FAI, 0.9)) %>%
+            FAI_q90=quantile(FAI, 0.9),
+            K_FAI_mn=mean(K_FAI),
+            K_FAI_q10=quantile(K_FAI, 0.1),
+            K_FAI_q90=quantile(K_FAI, 0.9)) %>%
   ggplot(aes(date, FAI_mn, ymin=FAI_q10, ymax=FAI_q90)) +
   geom_ribbon(alpha=0.5, colour=NA, fill="grey") +
   geom_ribbon(aes(ymin=FAI_q25, ymax=FAI_q75), 
               alpha=0.75, colour=NA, fill="grey") +
-  geom_line(size=1) + ylim(0, NA)
+  geom_line(size=1) + ylim(0, NA) + facet_grid(.~month)
 
 imap_dfr(out, 
          ~tibble(sim=.y, 
@@ -443,6 +615,34 @@ imap_dfr(out,
                  harvest=.x$harvest/1e3)) %>%
   ggplot(aes(date, harvest, group=sim)) + 
   geom_point(alpha=0.2, size=1) + ylim(0,NA)
+  
+imap_dfr(out, 
+         ~tibble(sim=.y, 
+                 date=ymd(paste0(1:pars$tmax, "-06-01")),
+                 harvest=.x$harvest/1e3)) %>%
+  group_by(sim) %>%
+  mutate(harvestCumulative=cumsum(harvest)) %>%
+  ggplot(aes(date, harvestCumulative, group=sim)) + 
+  geom_line(alpha=0.2, size=1) + ylim(0,NA)
+
+imap_dfr(out, 
+         ~tibble(sim=.y, 
+                 date=ymd(paste0(1:pars$tmax, "-06-01")),
+                 harvest=.x$harvest/1e3)) %>%
+  group_by(sim) %>%
+  mutate(harvest=cumsum(harvest)) %>%
+  group_by(date) %>% 
+  summarise(harvest_mn=mean(harvest), 
+            harvest_q10=quantile(harvest, 0.1),
+            harvest_q25=quantile(harvest, 0.25),
+            harvest_q75=quantile(harvest, 0.75),
+            harvest_q90=quantile(harvest, 0.9)) %>%
+  ggplot(aes(date, harvest_mn, ymin=harvest_q10, ymax=harvest_q90)) + 
+  geom_linerange(colour="grey", size=1) +
+  geom_linerange(aes(ymin=harvest_q25, ymax=harvest_q75), 
+                 size=2, colour="grey") +
+  geom_point() + ylim(0, NA) +
+  labs(y="Cumulative harvest")
 
 imap_dfr(out, 
          ~tibble(sim=.y, 
@@ -464,5 +664,5 @@ imap_dfr(out,
 
 
 
-# Analysis
+
 
