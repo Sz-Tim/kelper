@@ -21,7 +21,7 @@ editor_options:
 
 # Overview
 
-This script processes and explores covariates available in the UK.
+This script processes covariates available in the UK.
 
 
 ```{r setup, echo=F, include=F}
@@ -36,7 +36,7 @@ walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw())
 
 data.dir <- "..\\data\\digitized\\"
-gis.dir <- "..\\..\\0_gis\\"
+gis.dir <- "..\\..\\00_gis\\"
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 
 site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
@@ -45,8 +45,8 @@ site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
 site.sf <- site.i %>% filter(!is.na(lon) & !is.na(lat)) %>%
   st_as_sf(coords=c("lon", "lat")) %>% st_set_crs(4326) 
 
-coast <- read_sf("../../0_gis/dataGeog/ne_10m_land.shp") %>%
-  add_row(read_sf("../../0_gis/dataGeog/ne_10m_minor_islands.shp")) %>%
+coast <- read_sf(paste0(gis.dir, "dataGeog\\ne_10m_land.shp")) %>%
+  add_row(read_sf(paste0(gis.dir, "dataGeog\\ne_10m_minor_islands.shp"))) %>%
   st_crop(UK_bbox)
 
 data.ls <- compileDatasets(data.dir)
@@ -54,8 +54,6 @@ data.ls <- compileDatasets(data.dir)
 
 ```{r loadCovariates, message=F, warning=F}
 covars.ls <- list(
-  depth=dir(paste0(gis.dir, "dataGeog"), "Bathymetry", full.names=T) %>%
-    raster() %>% crop(UK_bbox),
   fetch=dir(paste0(gis.dir, "dataGeog"), "^FetchUK_200m", full.names=T) %>% 
     read_csv(show_col_types=F) %>% st_as_sf(coords=c("OSEast", "OSNorth")) %>% 
     st_set_crs(27700) %>% st_transform(4326),
@@ -65,8 +63,8 @@ covars.ls <- list(
   sst_night=dir(paste0(gis.dir, "dataEnv\\climate"), 
                 "MODISA_L3m_NSST_Monthly", full.names=T) %>%
     raster() %>% crop(UK_bbox),
-  chla=dir(paste0(gis.dir, "dataEnv\\chla"), 
-           "MODISA_L3m_CHL", full.names=T) %>%
+  attenuation=dir(paste0(gis.dir, "dataEnv\\attenuation"),
+                  "MODISA_L3m_KD", full.names=T) %>%
     raster() %>% crop(UK_bbox),
   irrad_longterm=dir(paste0(gis.dir, "dataEnv\\irradience"), 
                      "POWER_Regional_Climatology", full.names=T) %>%
@@ -96,7 +94,7 @@ irrad.grid <- (st_bbox(covars.ls$irrad_longterm) + .25*c(-1,-1,1,1)) %>%
 covars.ls$irrad_growing.month <- covars.ls$irrad_monthly %>%
   filter(MONTH %in% c("FEB", "MAR", "APR", "MAY", "JUN")) %>%
   group_by(PARAMETER, YEAR, id) %>%
-  summarise(PAR=sum(PAR)) %>%
+  summarise(PAR=mean(PAR)) %>%
   group_by(PARAMETER, id) %>%
   summarise(mnPAR=mean(PAR), sdPAR=sd(PAR)) %>%
   st_join(irrad.grid, .)
@@ -104,12 +102,40 @@ covars.ls$irrad_growing.month <- covars.ls$irrad_monthly %>%
 covars.ls$irrad_growing.day <- covars.ls$irrad_daily %>%
   filter(MO %in% 2:6) %>%
   group_by(PARAMETER, YEAR, id) %>%
-  summarise(PAR=sum(PAR)) %>%
+  summarise(PAR=mean(PAR)) %>%
   group_by(PARAMETER, id) %>%
   summarise(mnPAR=mean(PAR), sdPAR=sd(PAR)) %>%
   st_join(irrad.grid, .)
 
 ```
+
+
+
+
+```{r siteDepth_to_PAR}
+for(i in seq_along(data.ls)) {
+  if(any(!is.na(data.ls[[i]]$lat))) {
+    i_sf <- data.ls[[i]] %>% 
+      filter(!is.na(lat) & !is.na(lon)) %>%
+      st_as_sf(coords=c("lon", "lat"), crs=4326)
+    data.ls[[i]] <- data.ls[[i]] %>% 
+      filter(!is.na(lat) & !is.na(lon)) %>%
+      mutate(sst_day=raster::extract(covars.ls$sst_day, i_sf, fun=mean),
+             sst_night=raster::extract(covars.ls$sst_night, i_sf, fun=mean),
+             chla=raster::extract(covars.ls$chla, i_sf, fun=mean),
+             kd=raster::extract(covars.ls$attenuation, i_sf, fun=mean),
+             PAR_surface=st_join(i_sf, 
+                                 covars.ls$irrad_growing.month %>%
+                                   filter(grepl("ALLSKY", PARAMETER)), left=T)$mnPAR)
+    if(any(!is.na(data.ls[[i]]$depth))) {
+      data.ls[[i]] <- data.ls[[i]] %>%
+        mutate(PAR_atDepth=PAR_surface * exp(-kd * depth))
+    }
+  }
+}
+```
+
+
 
 
 
@@ -126,44 +152,41 @@ covars.ls$irrad_longterm %>%
   st_join(irrad.grid, .) %>%
   ggplot() + geom_sf(aes(fill=ANN), alpha=0.7, colour="grey30") + 
   geom_sf(data=coast) + 
-  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c() +
+  ggtitle("Annual mean PAR")
 
 covars.ls$irrad_growing.month %>%
   ggplot() + geom_sf(aes(fill=mnPAR), alpha=0.7, colour="grey40") + 
   geom_sf(data=coast) +
-  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c() +
+  ggtitle("Mean PAR during growing season (monthly means)")
 
 covars.ls$irrad_growing.month %>%
   ggplot() + geom_sf(aes(fill=sdPAR), alpha=0.7, colour="grey40") + 
   geom_sf(data=coast) + 
-  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c() +
+  ggtitle("sd PAR during growing season (monthly means)")
 
 covars.ls$irrad_growing.month %>%
   ggplot() + geom_sf(aes(fill=sdPAR/mnPAR), alpha=0.7, colour="grey40") + 
   geom_sf(data=coast) + 
-  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c() +
+  ggtitle("CV PAR during growing season (monthly means)")
 
 covars.ls$irrad_growing.day %>%
   ggplot() + geom_sf(aes(fill=mnPAR), alpha=0.7, colour="grey40") + 
   geom_sf(data=coast) +
-  facet_wrap(~PARAMETER) + scale_fill_viridis_c()
+  facet_wrap(~PARAMETER) + scale_fill_viridis_c() +
+  ggtitle("Mean PAR during growing season (daily means)")
 
 st_join(site.sf, irrad.grid) %>%
   left_join(as_tibble(covars.ls$irrad_longterm %>% 
                         st_join(irrad.grid, .)), by="id") %>%
   ggplot() + geom_sf(data=coast) + 
   geom_sf(aes(colour=log(ANN))) + scale_colour_viridis_c() + 
-  facet_wrap(~PARAMETER)
+  facet_wrap(~PARAMETER) +
+  ggtitle("Mean annual PAR (Kain sites)")
 
-
-covars.ls$irrad_monthly %>% filter(YEAR==2014) %>% 
-  filter(MONTH %in% c("JUL", "AUG")) %>%
-  mutate(MONTH=factor(MONTH, levels=unique(covars.ls$irrad_monthly$MONTH))) %>%
-  st_join(irrad.grid, .) %>%
-  ggplot() + geom_sf(data=coast) + 
-  geom_sf(aes(fill=PAR), alpha=0.7, colour="grey40") +
-  scale_fill_viridis_c() + 
-  facet_grid(PARAMETER~MONTH)
 
 covars.ls$irrad_daily %>% 
   filter(DATE > "2017-05-10" & DATE < "2017-06-15") %>%
@@ -188,6 +211,13 @@ covars.ls$irrad_daily %>%
 ```
 
 
+Data were collected from 4 regions, each with 2 sites. At each site, samples were collected at 2, 5, 10, and 15m depth. Data collected at each depth:
+
+- PAR, light intensity (14 d, May 2017)  
+- 8 x 1m quadrats with density, % cover of canopy, subcanopy (May 2017)
+- 10 canopy individuals for morphometry (Sep-Oct 2017)
+
+Also, max depth of kelp forest, individuals (May 2017)
 ```{r smith_data}
 data.ls$depth_metric %>% 
   mutate(location=factor(location, 
@@ -213,10 +243,107 @@ data.ls$depth_metric %>% filter(scale != "HOBO") %>%
             by=c("depth", "location")) %>%
   mutate(location=factor(location, 
                          levels=unique(data.ls$depth_metric$location))) %>% 
-  ggplot(aes(light_intensity, mean, ymin=mean-2*se, ymax=mean+2*se,
+  ggplot(aes(log(PAR), mean, ymin=mean-2*se, ymax=mean+2*se,
              colour=location)) + 
-  geom_pointrange() + geom_line() +
+  geom_pointrange() + stat_smooth(method="lm", se=F) +
   facet_wrap(~paste(scale, metric, sep=": "), scales="free_y") +
-  scale_colour_brewer(type="div", palette=3)
+  scale_colour_brewer(type="div", palette=3) 
+
+data.ls$depth_metric %>% filter(scale != "HOBO") %>%
+  left_join(.,
+            data.ls$depth_metric %>% filter(scale == "HOBO") %>%
+              select(depth, metric, mean, location) %>%
+              mutate(metric=str_replace_all(metric, " ", "_")) %>%
+              pivot_wider(names_from="metric", values_from="mean"), 
+            by=c("depth", "location")) %>%
+  mutate(region=if_else(grepl("Scotland", location), "Northern", "Southern")) %>% 
+  ggplot(aes(log(PAR), mean, ymin=mean-2*se, ymax=mean+2*se,
+             colour=region)) + 
+  geom_pointrange() + stat_smooth(method="lm", se=F) +
+  facet_wrap(~paste(scale, metric, sep=": "), scales="free_y")
+
+# There is minimal difference between the light metrics
+data.ls$depth_metric %>% filter(scale != "HOBO") %>%
+  left_join(.,
+            data.ls$depth_metric %>% filter(scale == "HOBO") %>%
+              select(depth, metric, mean, location) %>%
+              mutate(metric=str_replace_all(metric, " ", "_")) %>%
+              pivot_wider(names_from="metric", values_from="mean"), 
+            by=c("depth", "location")) %>%
+  mutate(region=if_else(grepl("Scotland", location), "Northern", "Southern")) %>% 
+  group_by(metric, scale) %>%
+  summarise(R2_PAR=summary(lm(mean ~ log(PAR)*region))$adj.r.squared,
+            R2_PctSurface=summary(lm(mean ~ log(irradience_pct_surface)*region))$adj.r.squared,
+            R2_LtIntensity=summary(lm(mean ~ log(light_intensity)*region))$adj.r.squared) %>%
+  summary
+```
+So ideally, we would use PAR during the growing season from the NASA POWER data product (`covars.ls$irrad_[x]`) and then estimate attenuation based on depth and some estimate of turbidity like average chl a, I suppose. 
+
+Smith (2021) shows several within-individual differences between regions, presumably due to temperature. At a given PAR, individuals are longer in colder temperatures (lengthTotal), and this seems to be an effect of stipe length (no qualitative difference among regions in lengthFrond). Fronds tend to be a bit wider (widthFrond), but not clearly longer (lengthFrond), and perhaps more massive (weightFrond). Biomass seems to increase more steeply with PAR at colder sites.
+
+Within plots, there are fewer clear differences among regions. Cover may be a bit higher at northern sites (both canopy and subcanopy), though actual densities seem not to differ. This would indicate that $K_{FAI}$ may depend on both temperature and light, but that $K_N$ depends only on light. The increase in canopy biomass with PAR looks to be steeper, which corresponds with the in individual-level weight. 
+
+There is some reason to be concerned about extrapolating temperature effects based on 8 sites, particularly since the pairs are effectively replicates within a single location with regard to representation of the temperature gradient. On the other hand, the sites do mostly represent the range of SST within the UK, so most locations would involve interpolation of the trend rather than extrapolation. 
+
+There would still be a heavy reliance on a single season snapshot at a few locations, but that's required for essentially every component of this model. 
+
+
+```{r pessarrodona2019}
+pessarrodona.f <- "..\\data\\Pessarrodona2019\\Biomass accumulation and loss.xlsx"
+data.ls$month_biomass <- bind_rows(
+  readxl::read_xlsx(pessarrodona.f, 1) %>% mutate(type="accumulation"),
+  readxl::read_xlsx(pessarrodona.f, 2) %>% mutate(type="loss")
+  )
+
+
+data.ls$month_biomass %>%
+  mutate(MonthAbb=factor(Month, levels=month.name, labels=month.abb),
+         Month=factor(Month, levels=month.name),
+         totalChg=biomassChg*days_in_month(as_date(paste0("2017-", Month, "-01")))) %>%
+  ggplot(aes(MonthAbb, totalChg, colour=Location)) + 
+  geom_point() + stat_smooth(aes(as.numeric(Month)), se=F) + 
+  facet_grid(Species~type) + 
+  labs(x="", y="Frond biomass change (g DW/month)") 
+
+
+# We cannot calculate per-plant totals within seasons, or per-plant differences in mass (i.e., accumulation - loss). Instead, we sum the monthly averages for each season.
+data.ls$month_biomass %>%
+  filter(Species=="L. hyp") %>%
+  mutate(MonthAbb=factor(Month, levels=month.name, labels=month.abb),
+         Month=factor(Month, levels=month.name),
+         totalChg=biomassChg*days_in_month(as_date(paste0("2017-", Month, "-01"))),
+         season=if_else(MonthAbb %in% month.abb[1:6], "growing", "non-growing")) %>%
+  group_by(type, season, Month) %>%
+  summarise(mnChg=mean(totalChg)) %>%
+  group_by(type, season) %>%
+  summarise(totalChg=sum(mnChg)) %>%
+  ggplot(aes(season, totalChg, fill=type)) +
+  geom_hline(yintercept=0) + 
+  geom_bar(stat="identity", position="dodge", colour="grey30") +
+  scale_fill_manual(values=c("blue3", "red3")) +
+  labs(x="Season", y="Expected frond biomass change (g DW)")
+
+data.ls$month_biomass %>%
+  filter(Species=="L. hyp") %>%
+  mutate(MonthAbb=factor(Month, levels=month.name, labels=month.abb),
+         Month=factor(Month, levels=month.name),
+         totalChg=biomassChg*days_in_month(as_date(paste0("2017-", Month, "-01"))),
+         season=if_else(MonthAbb %in% month.abb[1:6], "growing", "non-growing")) %>%
+  group_by(type, season, Month) %>%
+  summarise(mnChg=mean(totalChg)) %>%
+  group_by(type, season) %>%
+  summarise(totalChg=sum(mnChg)) %>%
+  group_by(season) %>%
+  pivot_wider(names_from="type", values_from="totalChg") %>%
+  mutate(diff=accumulation-loss) %>%
+  ggplot(aes(season, diff, fill=diff<0)) + 
+  geom_hline(yintercept=0) + 
+  geom_bar(stat="identity", colour="grey30") +
+  scale_fill_manual(values=c("blue3", "red3")) +
+  theme(legend.position="none") +
+  labs(x="Season", y="Expected frond biomass change (g DW)")
 ```
 
+So, while the majority of the biomass loss occurs during the growing season, the net change is still positive during the growing season and negative during the non-growing season. That is, there is still net frond growth in the growing season and net frond loss in the non-growing season.
+
+Unless these data are also available, we'll need to rely on these general averages as well as equations for back-calculating fresh weight.
