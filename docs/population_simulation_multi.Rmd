@@ -1,0 +1,357 @@
+---
+title: "KELPER"
+subtitle: "Population simulation: Multi-population"
+author: "Tim Szewczyk"
+output:
+  html_document:
+    theme: spacelab
+    df_print: paged
+    anchor_sections: TRUE
+    toc: yes
+    toc_depth: 2
+    toc_float: true
+  pdf_document:
+    toc: yes
+  html_notebook:
+    theme: spacelab
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# Overview
+
+This script simulates an individual population using data from the literature.
+
+
+```{r setup, echo=F, include=F}
+# set directory for knitr as main project directory
+knitr::opts_knit$set(root.dir=rprojroot::find_rstudio_root_file())
+```
+
+```{r workspace, echo=F, include=F, message=F, warning=F}
+pkgs <- c("raster", "lubridate", "tidyverse", "sf", "brms")
+suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
+walk(dir("code", "^00.*R", full.names=T), source)
+theme_set(theme_bw()); options(mc.cores=12)
+
+gis.dir <- "..\\..\\00_gis\\"
+UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
+coast <- read_sf(paste0(gis.dir, "dataGeog\\ne_10m_land.shp")) %>%
+  add_row(read_sf(paste0(gis.dir, "dataGeog\\ne_10m_minor_islands.shp"))) %>%
+  st_crop(UK_bbox)
+data.dir <- "..\\data\\digitized\\"
+data.ls <- compileDatasets(data.dir)
+
+site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
+                   col_select=1:3, show_col_types=F)
+
+lmType <- c("lm", "brms")[1]
+PAR_datasource <- c("MODIS", "POWER")[1]
+```
+
+
+# Covariates
+
+```{r covariates}
+covars.ls <- loadCovariates(gis.dir, UK_bbox, loadFile="data\\covar_ls.rds")
+data.ls <- extractCovarsToDatasets(data.ls, covars.ls, PAR_datasource)
+site.sf <- extractCovarsToPts(site.i, covars.ls, PAR_datasource)
+grid.domain <- UK_bbox %>%
+  st_make_grid(cellsize=c(0.25, 0.25)) %>%
+  st_sf(id=1:length(.)) %>%
+  extractCovarsToGrid(., covars.ls, PAR_datasource) %>%
+  filter(!is.na(KD_mn) & !is.na(PAR_surface) & !is.na(fetch)) %>%
+  mutate(id=row_number())
+```
+
+
+# Regressions
+
+```{r load_regressions}
+lm.dir <- paste0("temp\\", lmType)
+lenStipe_wtStipe <- readRDS(paste0(lm.dir, "_lenStipe_wtStipe.rds"))
+wtStipe_wtFrond.kappa <- readRDS(paste0(lm.dir, "_wtStipe_wtFrond_kappa.rds"))
+wtFrond_areaFrond.PAR_atDepth <- readRDS(paste0(lm.dir, "_wtFrond_areaFrond_PARdepth.rds"))
+areaFrond_wtFrond.PAR_atDepth <- readRDS(paste0(lm.dir, "_areaFrond_wtFrond_PARdepth.rds"))
+PAR_atDepth_FAI <- readRDS(paste0(lm.dir, "_PARdepth_FAI_K.rds"))
+PAR_atDepth_N <- readRDS(paste0(lm.dir, "_PARdepth_N_K.rds"))
+```
+
+```{r load_surv_fecund}
+surv.df <- data.ls$stageFrom_stageTo %>% 
+  filter(stageTo=="dead") %>%
+  mutate(survRate=1-rate,
+         exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
+fecund.df <- data.ls$stageFrom_stageTo %>% 
+  filter(stageFrom=="canopy" & stageTo=="recruits") %>%
+  mutate(exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
+```
+
+
+
+# Parameter list
+
+```{r set_parameters}
+params <- list(tmax=30,
+               depth=5,
+               prFullHarvest=0, 
+               freqHarvest=50, 
+               harvestTarget="stipe"
+               )
+
+sites_pool <- site.sf %>% filter(!is.na(KD_mn)) %>% st_drop_geometry() %>%
+  mutate(id=row_number())
+grid.i <- grid.domain %>% st_drop_geometry()
+
+rm(covars.ls); rm(data.ls)
+```
+
+
+```{r run_simulations}
+library(doParallel)
+library(tictoc)
+cl <- makePSOCKcluster(12)
+registerDoParallel(cl)
+tic()
+out.ls <- foreach(i=1:nrow(grid.i), 
+                  .packages=c("tidyverse", "brms", "lubridate")) %dopar% {
+  par_i <- setParameters(
+                tmax=params$tmax, 
+                prFullHarvest=params$prFullHarvest, 
+                freqHarvest=params$freqHarvest, 
+                harvestTarget=params$harvestTarget,
+                survRate=filter(surv.df, exposure==grid.i$fetchCat[i])$survRate^(1/2),
+                settlementRateBg=filter(fecund.df, exposure==grid.i$fetchCat[i])$rate,
+                extraPars=list(
+                  depth=params$depth,
+                  env=grid.i[i,],
+                  lenStipe_wtStipe=lenStipe_wtStipe,
+                  wtStipe_wtFrond=wtStipe_wtFrond.kappa,
+                  wtFrond_areaFrond=wtFrond_areaFrond.PAR_atDepth,
+                  areaFrond_wtFrond=areaFrond_wtFrond.PAR_atDepth,
+                  depth_N=PAR_atDepth_N,
+                  depth_FAI=PAR_atDepth_FAI)
+                )
+  out <- map(1:2, ~simulatePopulation_2Seasons(par_i, lmType=lmType, N0=rep(1,3)))
+  list(out=imap_dfr(out, 
+                    ~tibble(sim=.y, 
+                            year=rep(1:par_i$tmax, 3),
+                            month=rep(c(1,6,7), each=par_i$tmax),
+                            date=ymd(paste0(year, "-", month, "-01")),
+                            PAR_depth=.x$PAR,
+                            FAI=c(.x$FAI[3,,]),
+                            N.recruits=c(.x$N[1,,]),
+                            N.subcanopy=c(.x$N[2,,]),
+                            N.canopy=c(.x$N[3,,]),
+                            K_N=.x$K_N,
+                            K_FAI=.x$K_FAI) %>%
+                      pivot_longer(contains("N."), names_to="stage", values_to="N") %>%
+                      mutate(stage=factor(str_sub(stage, 3, -1), 
+                                          levels=c("canopy", "subcanopy", "recruits")))) %>%
+         add_column(par_i$env) %>%
+         mutate(depth=par_i$depth),
+       harvest=imap_dfr(out,
+                        ~tibble(sim=.y,
+                                year=1:par_i$tmax,
+                                date=ymd(paste0(2000+year, "-06-01")),
+                                PAR_depth=.x$PAR,
+                                FAI.June=c(.x$FAI[3,,2]),
+                                N.recruits.June=c(.x$N[1,,2]),
+                                N.subcanopy.June=c(.x$N[2,,2]),
+                                N.canopy.June=c(.x$N[3,,2]),
+                                K_FAI=.x$K_FAI,
+                                K_N=.x$K_N,
+                                harvest=.x$harvest/1e3) %>%
+                          mutate(cumulHarvest=cumsum(harvest))) %>%
+         add_column(par_i$env) %>%
+         mutate(depth=par_i$depth))
+}
+toc()
+stopCluster(cl)
+```
+
+```{r summarise_output}
+out.df <- do.call(rbind, map(out.ls, ~.x$out))
+out.sum <- out.df %>% group_by(id, year, month, date, stage) %>%
+  select(!c(sim)) %>%
+  summarise(N_q10=quantile(N, 0.1),
+            N_q25=quantile(N, 0.25),
+            N_q75=quantile(N, 0.75),
+            N_q90=quantile(N, 0.9),
+            FAI_q10=quantile(FAI, 0.1),
+            FAI_q25=quantile(FAI, 0.25),
+            FAI_q75=quantile(FAI, 0.75),
+            FAI_q90=quantile(FAI, 0.9),
+            K_FAI_q10=quantile(K_FAI, 0.1),
+            K_FAI_q90=quantile(K_FAI, 0.9),
+            across(everything(), mean)) %>%
+  ungroup
+out.sum.sf <- full_join(grid.domain %>% select(id), out.sum, by="id")
+
+harvest.df <- do.call(rbind, map(out.ls, ~.x$harvest))
+harvest.sum <- harvest.df %>% group_by(id, year, date) %>%
+  select(!c(sim)) %>%
+  summarise(harvest_q10=quantile(harvest, 0.1),
+            harvest_q25=quantile(harvest, 0.25),
+            harvest_q75=quantile(harvest, 0.75),
+            harvest_q90=quantile(harvest, 0.9),
+            cumulHarvest_q10=quantile(cumulHarvest, 0.1),
+            cumulHarvest_q25=quantile(cumulHarvest, 0.25),
+            cumulHarvest_q75=quantile(cumulHarvest, 0.75),
+            cumulHarvest_q90=quantile(cumulHarvest, 0.9),
+            K_FAI_q10=quantile(K_FAI, 0.1),
+            K_FAI_q90=quantile(K_FAI, 0.9),
+            across(everything(), mean)) %>%
+  ungroup
+harvest.sum.sf <- full_join(grid.domain %>% select(id), harvest.sum, by="id")
+```
+
+
+```{r plot_output}
+out.sum %>% filter(month==1 & stage=="canopy") %>%
+  filter(id %in% sample(1:nrow(grid.i), 10)) %>%
+  ggplot(aes(year, FAI, ymin=FAI_q10, ymax=FAI_q90, group=id,
+             colour=PAR_depth, fill=PAR_depth)) +
+  geom_ribbon(alpha=0.25, colour=NA) +
+  geom_ribbon(aes(ymin=FAI_q25, ymax=FAI_q75), 
+              alpha=0.5, colour=NA) +
+  geom_line(size=1) + 
+  scale_colour_viridis_c() + scale_fill_viridis_c() +
+  ylim(0, NA) + facet_wrap(~fetchCat)
+
+out.sum %>% filter(month==1) %>%
+  filter(id %in% sample(1:nrow(grid.i), 10)) %>%
+  ggplot(aes(year, N, ymin=N_q10, ymax=N_q90, group=id,
+             colour=PAR_depth, fill=PAR_depth)) +
+  geom_ribbon(alpha=0.25, colour=NA) +
+  geom_ribbon(aes(ymin=FAI_q25, ymax=FAI_q75), 
+              alpha=0.5, colour=NA) +
+  geom_line(size=1) + 
+  scale_colour_viridis_c() + scale_fill_viridis_c() +
+  ylim(0, NA) + facet_grid(stage~fetchCat, scales="free_y")
+
+out.sum %>% filter(month==1 & stage=="canopy") %>%
+  ggplot(aes(date, N, ymin=N_q10, ymax=N_q90, group=id,
+             colour=PAR_depth, fill=PAR_depth)) +
+  geom_ribbon(alpha=0.25, colour=NA) +
+  geom_ribbon(aes(ymin=N_q25, ymax=N_q75), 
+              alpha=0.5, colour=NA) +
+  geom_line(size=1) + 
+  scale_colour_viridis_c() + scale_fill_viridis_c() +
+  ylim(0, NA) + facet_wrap(~fetchCat)
+
+harvest.sum %>% 
+  ggplot(aes(year, cumulHarvest, ymin=cumulHarvest_q10, ymax=cumulHarvest_q90, group=id,
+             colour=PAR_depth, fill=PAR_depth)) +
+  geom_ribbon(alpha=0.25, colour=NA) +
+  geom_ribbon(aes(ymin=cumulHarvest_q25, ymax=cumulHarvest_q75), 
+              alpha=0.5, colour=NA) +
+  geom_line(size=1) + 
+  scale_colour_viridis_c() + scale_fill_viridis_c() +
+  ylim(0, NA) + facet_wrap(~fetchCat)
+
+harvest.sum %>% 
+  filter(id %in% sample(1:nrow(grid.i), 10)) %>%
+  ggplot(aes(year, cumulHarvest, ymin=cumulHarvest_q10, ymax=cumulHarvest_q90, group=id,
+             colour=PAR_depth, fill=PAR_depth)) +
+  geom_ribbon(alpha=0.25, colour=NA) +
+  geom_ribbon(aes(ymin=cumulHarvest_q25, ymax=cumulHarvest_q75), 
+              alpha=0.5, colour=NA) +
+  geom_line(size=1) + 
+  scale_colour_viridis_c() + scale_fill_viridis_c() +
+  ylim(0, NA) + facet_wrap(~fetchCat)
+
+
+harvest.sum.sf %>%
+  filter(year==max(year)) %>%
+  ggplot(aes(fill=cumulHarvest)) + 
+  geom_sf() + scale_fill_viridis_c(paste(params$harvestTarget, "(kg)")) +
+  ggtitle(paste0("Total harvest (", params$tmax, " yrs, ", params$depth, "m)"))
+harvest.sum.sf %>%
+  filter(date==max(date)) %>%
+  ggplot(aes(fill=(cumulHarvest_q90-cumulHarvest_q10)/cumulHarvest)) + 
+  geom_sf() + scale_fill_viridis_c(paste(params$harvestTarget, "(kg)")) +
+  ggtitle(paste0("Total harvest CV (", params$tmax, " yrs, ", params$depth, "m)"))
+
+out.sum.sf %>%
+  filter(month==1 & stage=="canopy") %>%
+  ggplot(aes(fill=FAI)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=10) +
+  ggtitle(paste0("January FAI (", params$depth, "m)"))
+out.sum.sf %>%
+  filter(month==1 & stage=="canopy") %>%
+  ggplot(aes(fill=N)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=10) +
+  ggtitle(paste0("January canopy density (", params$depth, "m)"))
+
+out.sum.sf %>%
+  filter(month==6 & stage=="canopy") %>%
+  ggplot(aes(fill=FAI)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=5) +
+  ggtitle(paste0("June FAI (", params$depth, "m)")) +
+  theme(axis.text=element_blank(), axis.ticks=element_blank())
+out.sum.sf %>%
+  filter(month==6 & stage=="canopy") %>%
+  ggplot(aes(fill=N)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=5) +
+  ggtitle(paste0("June canopy density (", params$depth, "m)"))
+
+out.sum.sf %>% 
+  filter(month==6 & stage=="canopy") %>%
+  group_by(id) %>%
+  summarise(FAI=mean(FAI)) %>%
+  ggplot(aes(fill=FAI)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  ggtitle(paste0("Mean June FAI (", params$depth, "m)")) +
+  theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
+out.sum.sf %>% 
+  filter(month==6 & stage=="canopy") %>%
+  group_by(id) %>%
+  summarise(N=mean(N)) %>%
+  ggplot(aes(fill=N)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  ggtitle(paste0("Mean June density (", params$depth, "m)")) +
+  theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
+harvest.sum.sf %>%
+  filter(year==max(year)) %>%
+  ggplot(aes(fill=cumulHarvest)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c(paste(params$harvestTarget, "(kg)")) +
+  ggtitle(paste0("Total harvest (", params$tmax, " yrs, ", params$depth, "m)")) +
+  theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
+
+
+
+
+
+out.df %>% filter(stage=="canopy" & month==6) %>% 
+  ggplot(aes(date, FAI, colour=PAR_depth, group=paste(id, sim))) + 
+  geom_line() + scale_colour_viridis_c(option="E")
+
+
+out.df %>% filter(stage=="canopy" & month==6) %>%
+  ggplot(aes(year, log(N), colour=PAR_depth)) + 
+  geom_point() + geom_line(aes(group=paste(id, sim))) + 
+  scale_colour_viridis_c()
+out.df %>% filter(stage=="canopy" & month==6) %>%
+  ggplot(aes(year, FAI, colour=PAR_depth)) + 
+  geom_point() + geom_line(aes(group=paste(id, sim))) + 
+  scale_colour_viridis_c()
+harvest.df %>%
+  ggplot(aes(year, harvest, colour=PAR_depth)) + 
+  geom_point() + 
+  scale_colour_viridis_c()
+harvest.df %>%
+  ggplot(aes(year, cumulHarvest, colour=PAR_depth)) + 
+  geom_line(aes(group=paste(id, sim))) + 
+  scale_colour_viridis_c()
+harvest.df %>%
+  ggplot(aes(year, cumulHarvest, colour=PAR_depth)) + 
+  geom_line(aes(group=paste(id, sim))) + 
+  scale_colour_viridis_c() + facet_grid(.~fetchCat)
+```
+
