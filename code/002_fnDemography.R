@@ -115,7 +115,7 @@ growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, par
   for(j in 2:pars$N_stages) {
     FAI_new[j] <- FAI_orig[j]*A.mx[j,j] +
       N_orig[j]*A.mx[j,j]*pars$growthRateFrond[j]*(1-kappa) +
-      N_orig[j-1]*A.mx[j,j-1]*exp(logAreaFrond.stage[j-1])
+      N_orig[j-1]*A.mx[j,j-1]*exp(logAreaFrond.stage[j])
   }
   
   return(FAI_new)
