@@ -108,24 +108,46 @@ simulatePopulation_3Seasons <- function(pars, N0=c(1, 1, 1)) {
 
 
 
-simulatePopulation_2Seasons <- function(pars, N0=c(1, 1, 1)) {
+simulatePopulation_2Seasons <- function(pars, N0=c(1, 1, 1), lmType="brms", ndraws=5) {
   
   # calculate global parameters
   PAR <- pars$env$PAR_surface * exp(-pars$env$KD_mn * pars$depth)
-  logWtStipe.stage <- predict(pars$lenStipe_wtStipe,
-                              tibble(logLenStipe=log(pars$sizeClassMdpts)), ndraws=5)[,1]
-  K_FAI <- exp(predict(pars$depth_FAI, tibble(logPAR=log(PAR)), ndraws=5)[1,1])
-  K_N <- exp(predict(pars$depth_N, tibble(PAR_atDepth=PAR, stage="canopy"), ndraws=5)[1,1])
+  if(lmType=="brms") {
+    logWtStipe.stage <- colMeans(
+      posterior_epred(pars$lenStipe_wtStipe,
+                      tibble(logLenStipe=log(pars$sizeClassMdpts)), ndraws=ndraws))
+    K_FAI <- exp(colMeans(
+      posterior_epred(pars$depth_FAI, tibble(logPAR=log(PAR)), ndraws=ndraws)))
+    K_N <- exp(colMeans(
+      posterior_epred(pars$depth_N, tibble(PAR_atDepth=PAR, stage="canopy"), ndraws=ndraws)))
+  } else {
+    logWtStipe.stage <- predict(pars$lenStipe_wtStipe,
+                                tibble(logLenStipe=log(pars$sizeClassMdpts)))
+    K_FAI <- exp(predict(pars$depth_FAI, tibble(logPAR=log(PAR))))
+    K_N <- exp(predict(pars$depth_N, tibble(PAR_atDepth=PAR, stage="canopy")))
+  }
   
   # storage
   N <- FAI <- array(dim=c(pars$N_stages, pars$tmax, 3))
   N[,1,1] <- N0
-  logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
-                              newdata=tibble(logWtStipe=logWtStipe.stage, 
-                                             propClear=1), ndraws=5)[,1]
-  FAI[,1,1] <- exp(predict(pars$wtFrond_areaFrond,
-                           tibble(PAR_atDepth=PAR, 
-                                  logWtFrond=log(N[,1,1]*exp(logWtFrond.stage))), ndraws=5)[,1])
+  if(lmType=="brms") {
+    logWtFrond.stage <- colMeans(
+      posterior_epred(pars$wtStipe_wtFrond, 
+                      newdata=tibble(logWtStipe=logWtStipe.stage, 
+                                     propClear=1), ndraws=ndraws))
+    FAI[,1,1] <- exp(colMeans(
+      posterior_epred(pars$wtFrond_areaFrond,
+                      tibble(PAR_atDepth=PAR, 
+                             logWtFrond=log(N[,1,1]*exp(logWtFrond.stage))), ndraws=ndraws)))
+  } else {
+    logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
+                                newdata=tibble(logWtStipe=logWtStipe.stage, 
+                                               propClear=1))
+    FAI[,1,1] <- exp(predict(pars$wtFrond_areaFrond,
+                             tibble(PAR_atDepth=PAR, 
+                                    logWtFrond=log(N[,1,1]*exp(logWtFrond.stage)))))
+  }
+
   harvest <- rep(0, pars$tmax) # log(grams of frond)
   kappa <- array(dim=c(pars$tmax, 3, 2))
   
@@ -150,12 +172,23 @@ simulatePopulation_2Seasons <- function(pars, N0=c(1, 1, 1)) {
     A[[1]][2,2] <- pars$survRate[2] - A[[1]][3,2]
     A[[1]][3,3] <- pars$survRate[3]
     # update population
-    logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
-                                newdata=tibble(logWtStipe=logWtStipe.stage, 
-                                               propClear=1-kappa[i,1,1]), ndraws=5)[,1]
-    logAreaFrond.stage <- predict(pars$wtFrond_areaFrond,
-                                  tibble(PAR_atDepth=PAR,
-                                         logWtFrond=logWtFrond.stage), ndraws=5)[,1]
+    if(lmType=="brms") {
+      logWtFrond.stage <- colMeans(
+        posterior_epred(pars$wtStipe_wtFrond, 
+                        newdata=tibble(logWtStipe=logWtStipe.stage, 
+                                       propClear=1-kappa[i,1,1]), ndraws=ndraws))
+      logAreaFrond.stage <- colMeans(
+        posterior_epred(pars$wtFrond_areaFrond,
+                        tibble(PAR_atDepth=PAR,
+                               logWtFrond=logWtFrond.stage), ndraws=ndraws))
+    } else {
+      logWtFrond.stage <- predict(pars$wtStipe_wtFrond, 
+                                  newdata=tibble(logWtStipe=logWtStipe.stage, 
+                                                 propClear=1-kappa[i,1,1]))
+      logAreaFrond.stage <- predict(pars$wtFrond_areaFrond,
+                                    tibble(PAR_atDepth=PAR,
+                                           logWtFrond=logWtFrond.stage))
+    }
     N[,i,2] <- A[[1]] %*% N[,i,1]
     FAI[,i,2] <- growFrondArea(FAI[,i,1], N[,i,1], A[[1]], kappa[i,1,1],
                                logAreaFrond.stage, pars)
@@ -169,12 +202,23 @@ simulatePopulation_2Seasons <- function(pars, N0=c(1, 1, 1)) {
       stipeBiomass <- ifelse(pars$harvestTarget %in% c("all", "stipe"),
                              sum(exp(logWtStipe.stage) * N[,i,2]),
                              0)
-      frondBiomass <- ifelse(pars$harvestTarget %in% c("all", "frond"),
-                             sum(exp(predict(pars$areaFrond_wtFrond,
-                                             tibble(PAR_atDepth=PAR, 
-                                                    logAreaFrond=log(FAI[,i,2])), 
-                                             ndraws=5)[,1])),
-                             0)
+      if(lmType=="brms") {
+        frondBiomass <- ifelse(pars$harvestTarget %in% c("all", "frond"),
+                               sum(exp(colMeans(
+                                 posterior_epred(pars$areaFrond_wtFrond,
+                                                 tibble(PAR_atDepth=PAR, 
+                                                        logAreaFrond=log(FAI[,i,2])), 
+                                                 ndraws=ndraws)))),
+                               0)
+      } else {
+        frondBiomass <- ifelse(pars$harvestTarget %in% c("all", "frond"),
+                               sum(exp(
+                                 predict(pars$areaFrond_wtFrond,
+                                         tibble(PAR_atDepth=PAR, 
+                                                logAreaFrond=log(FAI[,i,2]))))),
+                               0)
+      }
+
       harvest[i] <- pars$prFullHarvest * (stipeBiomass + frondBiomass)
       
       
