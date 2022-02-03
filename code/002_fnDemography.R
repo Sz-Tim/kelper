@@ -110,9 +110,11 @@ growDens <- function(propOccupiedSpace, g0, g1, sizeClass) {
 #' @examples
 growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, pars) {
   FAI_new <- rep(0, pars$N_stages)
+  # recruits: (surviving FAI) + (new growth within stage)
   FAI_new[1] <- FAI_orig[1]*A.mx[1,1] +
     N_orig[1]*A.mx[1,1]*pars$growthRateFrond[1]*(1-kappa)
   for(j in 2:pars$N_stages) {
+    # others: (surviving FAI) + (new growth within stage) + (FAI of newcomers)
     FAI_new[j] <- FAI_orig[j]*A.mx[j,j] +
       N_orig[j]*A.mx[j,j]*pars$growthRateFrond[j]*(1-kappa) +
       N_orig[j-1]*A.mx[j,j-1]*exp(logAreaFrond.stage[j])
