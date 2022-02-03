@@ -278,6 +278,30 @@ data.ls$day_FAI %>%
 
 
 
+# Height
+The maximum stipe length varies geographically. Pessarodona (2018) provides values of maximum stipe length across a broad geographic extent, including depth.
+
+```{r maxStipe}
+data.ls$depth_maxStipeLen %>%
+  st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
+  ggplot() + geom_sf(data=coast) + 
+  geom_sf(aes(colour=maxStipeLen)) + scale_colour_viridis_c()
+ggplot(data.ls$depth_maxStipeLen, aes(sst_day, maxStipeLen)) +
+  geom_point() + stat_smooth(method="lm")
+library(MuMIn); options(na.action="na.fail")
+full.data.df <- data.ls$depth_maxStipeLen %>%
+  select(maxStipeLen, depth, PAR_mn, PAR_POWER, 
+         PAR_atDepth_POWER, PAR_atDepth_MODIS, sst_day, fetch) %>%
+  drop_na()
+dredge(lm(maxStipeLen ~ ., data=full.data.df)) %>% head
+GGally::ggpairs(full.data.df)
+```
+
+
+
+
+
+
 
 # Survival
 
