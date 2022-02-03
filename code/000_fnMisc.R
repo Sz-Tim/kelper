@@ -213,6 +213,7 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
 
 
 extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
+  fetch_thirds <- quantile(covars.ls$fetch$fetchsum, probs=(1:2)/3)
   for(i in seq_along(data.ls)) {
     if(any(!is.na(data.ls[[i]]$lat))) {
       i_sf <- data.ls[[i]] %>% 
@@ -234,7 +235,13 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
                                       fun=mean, small=T, method="bilinear"),
                PAR_POWER=st_join(., 
                                  covars.ls$irrad_growing.month, 
-                                 left=T, join=st_nearest_feature)$mnPAR)
+                                 left=T, join=st_nearest_feature)$mnPAR,
+               fetch=st_join(., 
+                             covars.ls$fetch, 
+                             left=T, join=st_nearest_feature)$fetchsum,
+               fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
+                                  between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
+                                  fetch > fetch_thirds[2] ~ 3))
       data.ls[[i]] <- left_join(data.ls[[i]], st_drop_geometry(i_sf))
       if(any(!is.na(data.ls[[i]]$depth))) {
         data.ls[[i]] <- data.ls[[i]] %>%
