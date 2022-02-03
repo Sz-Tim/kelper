@@ -457,5 +457,22 @@ harvest.df %>%
   ggplot(aes(year, cumulHarvest, colour=PAR_depth)) + 
   geom_line(aes(group=paste(id, sim))) + 
   scale_colour_viridis_c() + facet_grid(.~fetchCat)
+
+
+library(gganimate)
+anim <- out.sum.sf %>% filter(stage=="canopy") %>%
+  ggplot() + geom_sf(aes(fill=N)) + transition_states(date) +
+  scale_fill_viridis_c() 
+anim_save("canopy_N.gif", anim, nframes=90)
+
+anim <- out.sum.sf %>% filter(stage=="canopy") %>%
+  ggplot() + geom_sf(aes(fill=FAI)) + transition_states(date) +
+  scale_fill_viridis_c() 
+anim_save("canopy_FAI.gif", anim, nframes=90)
+
+anim <- harvest.sum.sf %>% 
+  ggplot() + geom_sf(aes(fill=harvest)) + transition_states(date) +
+  scale_fill_viridis_c() 
+anim_save("harvest.gif", anim, nframes=90)
 ```
 
