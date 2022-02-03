@@ -388,6 +388,26 @@ tibble(date=day_seq, recruits=pred.1, subcanopy=pred.2, canopy=pred.3) %>%
 
 
 
+## Maximum height
+In Pessarodona (2018), maximum stipe length is contended to be related to temperature. Within the UK, it seems that surface PAR is actually a better predictor (data_demography.Rmd/Height), but it might be best to defer to expertise and stick with temperature. 
+```{r stipeMaxHeight, message=F}
+if(rerun_modelFits) {
+  if(lmType=="brms") {
+    sst_maxStipeLen <- data.ls$depth_maxStipeLen %>%
+      brm(maxStipeLen ~ sst_day, data=.)
+    saveRDS(sst_maxStipeLen, "temp\\brms_sst_maxStipeLen.rds")
+  } else {
+    sst_maxStipeLen <- data.ls$depth_maxStipeLen %>%
+      lm(maxStipeLen ~ sst_day, data=.)
+    saveRDS(sst_maxStipeLen, "temp\\lm_sst_maxStipeLen.rds")
+  }
+} else {
+  sst_maxStipeLen <- readRDS(paste0("temp\\", lmType, "_sst_maxStipeLen.rds"))
+}
+```
+
+
+
 ## Carrying capacity
 
 There are two options for defining carrying capacity: Density of individuals, or Frond Area Index. The number of individuals relates more to space limitations, while FAI directly relates to density dependent light limitation. Both variables show semi-log linear relationships with depth, and the effect of depth on density is more pronounced in the canopy compared to the subcanopy. 
