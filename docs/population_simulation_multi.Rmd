@@ -358,20 +358,50 @@ out.sum.sf %>%
   geom_sf(colour=NA) + scale_fill_viridis_c() +
   facet_wrap(~year, ncol=10) +
   ggtitle(paste0("January canopy density (", params$depth, "m)"))
+mass.sum.sf %>%
+  filter(month==1) %>% filter(year > 4) %>%
+  ggplot(aes(fill=stipeMass)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=10) +
+  ggtitle(paste0("January stipe mass (", params$depth, "m)"))
+mass.sum.sf %>%
+  filter(month==1) %>% filter(year > 4) %>%
+  ggplot(aes(fill=stipeMass+frondMass)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=10) +
+  ggtitle(paste0("January biomass (", params$depth, "m)"))
 
 out.sum.sf %>%
   filter(month==6 & stage=="canopy") %>%
   ggplot(aes(fill=FAI)) + 
   geom_sf(colour=NA) + scale_fill_viridis_c() +
-  facet_wrap(~year, ncol=5) +
+  facet_wrap(~year, ncol=10) +
   ggtitle(paste0("June FAI (", params$depth, "m)")) +
   theme(axis.text=element_blank(), axis.ticks=element_blank())
 out.sum.sf %>%
   filter(month==6 & stage=="canopy") %>%
   ggplot(aes(fill=N)) + 
   geom_sf(colour=NA) + scale_fill_viridis_c() +
-  facet_wrap(~year, ncol=5) +
+  facet_wrap(~year, ncol=10) +
   ggtitle(paste0("June canopy density (", params$depth, "m)"))
+mass.sum.sf %>%
+  filter(month==6) %>% filter(year > 4) %>%
+  ggplot(aes(fill=stipeMass)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=10) +
+  ggtitle(paste0("June stipe mass (", params$depth, "m)"))
+mass.sum.sf %>%
+  filter(month==6) %>% filter(year > 4) %>%
+  ggplot(aes(fill=stipeMass+frondMass)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=10) +
+  ggtitle(paste0("June biomass (", params$depth, "m)"))
+mass.sum.sf %>%
+  filter(month==6) %>% filter(year > 4) %>%
+  ggplot(aes(fill=stipe_q90-stipe_q10)) + 
+  geom_sf(colour=NA) + scale_fill_viridis_c() +
+  facet_wrap(~year, ncol=10) +
+  ggtitle(paste0("June stipe mass CI width (", params$depth, "m)"))
 
 out.sum.sf %>% 
   filter(month==6 & stage=="canopy") %>%
@@ -469,6 +499,11 @@ anim <- out.sum.sf %>% filter(stage=="canopy") %>%
   ggplot() + geom_sf(aes(fill=FAI)) + transition_states(date) +
   scale_fill_viridis_c() 
 anim_save("canopy_FAI.gif", anim, nframes=90)
+
+anim <- mass.sum.sf %>% 
+  ggplot() + geom_sf(aes(fill=stipeMass)) + transition_states(date) +
+  scale_fill_viridis_c() 
+anim_save("biomass_stipe.gif", anim, nframes=90)
 
 anim <- harvest.sum.sf %>% 
   ggplot() + geom_sf(aes(fill=harvest)) + transition_states(date) +
