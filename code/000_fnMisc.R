@@ -72,13 +72,11 @@ compileDatasets <- function(data.dir) {
 #' @examples
 setParameters <- function(path=NULL,
                           override=NULL,
-                          N_stages=3,
-                          N_seasons=2,
                           tmax=20,
                           growthRateStipeMax=c(194, 195, 58),
                           growthRateFrond=c(1787, 2299, 3979)/1e4, # m^2/plant/spring
                           frondAreaMax=5500/1e4,
-                          growthRateStipeDensityShape=2,
+                          growthRateDensityShape=1.5,
                           sizeClassLimits=(1000 * (0:6)/6)[c(1,2,5,7)],
                           survRate=c(0.4, 0.7, 0.9),
                           settlementRateBg=100,
@@ -100,15 +98,13 @@ setParameters <- function(path=NULL,
     pars <- list(
       
       # simulation 
-      N_stages=N_stages,
-      N_seasons=N_seasons,
       tmax=tmax,
       
       # growth
       growthRateStipeMax=growthRateStipeMax,
       growthRateFrond=growthRateFrond,
       frondAreaMax=frondAreaMax,
-      growthRateDensityStipeShape=growthRateStipeDensityShape,
+      growthRateDensityShape=growthRateDensityShape,
       sizeClassLimits=sizeClassLimits,
       sizeClassMdpts=(sizeClassLimits+lag(sizeClassLimits))[-1]/2,
       
