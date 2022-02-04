@@ -318,7 +318,7 @@ extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
 
 getPrediction <- function(mod, lmType, ndraws, new.df) {
   if(lmType=="brms") {
-    pred <- colMeans(posterior_epred(mod, new.df, ndraws))
+    pred <- colMeans(posterior_epred(mod, newdata=new.df, ndraws=ndraws))
   } else {
     pred <- predict(mod, new.df)
   }
