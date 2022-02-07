@@ -79,10 +79,10 @@ setParameters <- function(path=NULL,
                           growthRateDensityShape=1.5,
                           sizeClassLimits=(1000 * (0:6)/6)[c(1,2,5,7)],
                           survRate=c(0.4, 0.7, 0.9),
-                          settlementRateBg=100,
+                          settlementRateBg=400,
                           lossRate=c(0.1, 0.2, 0.3),
-                          prFullHarvest=0.4,
-                          freqHarvest=1,
+                          prFullHarvest=0,
+                          freqHarvest=1e5,
                           harvestTarget=c("all", "stipe", "frond")[1],
                           extraPars=NULL
                           ) {
