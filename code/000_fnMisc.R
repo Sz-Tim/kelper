@@ -141,42 +141,49 @@ setParameters <- function(path=NULL,
 loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL) {
   if(is.null(loadFile)) {
     covars.ls <- list(
-      fetch=dir(paste0(gis.dir, "dataGeog"), "^FetchUK_200m", full.names=T) %>% 
-        read_csv(show_col_types=F) %>% st_as_sf(coords=c("OSEast", "OSNorth")) %>% 
-        st_set_crs(27700) %>% st_transform(4326),
-      sst_day=dir(paste0(gis.dir, "dataEnv\\climate"), 
-                  "MODISA_L3m_SST_Monthly", full.names=T) %>%
-        raster() %>% crop(bbox),
-      sst_night=dir(paste0(gis.dir, "dataEnv\\climate"), 
-                    "MODISA_L3m_NSST_Monthly", full.names=T) %>%
-        raster() %>% crop(bbox),
-      chla=dir(paste0(gis.dir, "dataEnv\\chla"), 
+      fetch=dir(paste0(gis.dir, "fetch"), "^FetchUK_200m", full.names=T) %>% 
+        read_csv(show_col_types=F) %>% 
+        st_as_sf(coords=c("OSEast", "OSNorth"), crs=27700) %>% 
+        st_transform(4326),
+      sstDayGrow_mn=dir(paste0(gis.dir, "climate"), 
+                        "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
+        map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
+      sstDayGrow_sd=dir(paste0(gis.dir, "climate"), 
+                        "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
+        map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
+      sstNightGrow_mn=dir(paste0(gis.dir, "climate"), 
+                        "MODISA_L3m_NSST.*11W_49N", full.names=T) %>%
+        map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
+      sstNightGrow_sd=dir(paste0(gis.dir, "climate"), 
+                        "MODISA_L3m_NSST.*11W_49N", full.names=T) %>%
+        map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
+      chla=dir(paste0(gis.dir, "chla"), 
                "MODISA_L3m_CHL", full.names=T) %>%
         raster() %>% crop(bbox),
-      KD_mn=dir(paste0(gis.dir, "dataEnv\\attenuation"), 
+      KD_mn=dir(paste0(gis.dir, "attenuation"), 
                 "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
-      KD_sd=dir(paste0(gis.dir, "dataEnv\\attenuation"), 
+      KD_sd=dir(paste0(gis.dir, "attenuation"), 
                 "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
-      PAR_mn=dir(paste0(gis.dir, "dataEnv\\light"), 
+      PAR_mn=dir(paste0(gis.dir, "light"), 
                  "MODISA_L3m_PAR", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
-      PAR_sd=dir(paste0(gis.dir, "dataEnv\\light"), 
+      PAR_sd=dir(paste0(gis.dir, "light"), 
                  "MODISA_L3m_PAR", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
-      irrad_longterm=dir(paste0(gis.dir, "dataEnv\\light"), 
+      irrad_longterm=dir(paste0(gis.dir, "light"), 
                          "POWER_Regional_Climatology", full.names=T) %>%
         read_csv(skip=10, show_col_types=F) %>% 
         st_as_sf(coords=c("LON", "LAT"), crs=4326),
-      irrad_monthly=dir(paste0(gis.dir, "dataEnv\\light"), 
+      irrad_monthly=dir(paste0(gis.dir, "light"), 
                         "POWER_Regional_monthly", full.names=T) %>%
         read_csv(skip=10, show_col_types=F) %>% 
         filter(JAN != -999) %>% select(-ANN) %>%
         group_by(PARAMETER, YEAR) %>% mutate(id=row_number()) %>% ungroup %>%
         pivot_longer(5:16, names_to="MONTH", values_to="PAR") %>%
         st_as_sf(coords=c("LON", "LAT"), crs=4326),
-      irrad_daily=dir(paste0(gis.dir, "dataEnv\\light"), 
+      irrad_daily=dir(paste0(gis.dir, "light"), 
                       "POWER_Regional_Daily", full.names=T) %>%
         map_dfr(., ~read_csv(.x, skip=10, show_col_types=F)) %>% 
         mutate(DATE=case_when(is.na(DOY) ~ ymd(paste(YEAR, MO, DY, sep="-")),
@@ -215,10 +222,14 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
       i_sf <- data.ls[[i]] %>% 
         filter(!is.na(lat) & !is.na(lon)) %>%
         st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
-        mutate(sst_day=raster::extract(covars.ls$sst_day, ., 
+        mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, ., 
                                        fun=mean, small=T, method="bilinear"),
-               sst_night=raster::extract(covars.ls$sst_night, ., 
+               sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, ., 
                                          fun=mean, small=T, method="bilinear"),
+               sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, ., 
+                                         fun=mean, small=T, method="bilinear"),
+               sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, ., 
+                                           fun=mean, small=T, method="bilinear"),
                chla=raster::extract(covars.ls$chla, ., 
                                     fun=mean, small=T, method="bilinear"),
                KD_mn=raster::extract(covars.ls$KD_mn, ., 
@@ -255,10 +266,14 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
   site.sf <- site.i %>% 
     filter(!is.na(lat) & !is.na(lon)) %>%
     st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
-    mutate(sst_day=raster::extract(covars.ls$sst_day, ., 
-                                   fun=mean, small=T, method="bilinear"),
-           sst_night=raster::extract(covars.ls$sst_night, ., 
+    mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, ., 
                                      fun=mean, small=T, method="bilinear"),
+           sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, ., 
+                                     fun=mean, small=T, method="bilinear"),
+           sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, ., 
+                                       fun=mean, small=T, method="bilinear"),
+           sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, ., 
+                                       fun=mean, small=T, method="bilinear"),
            chla=raster::extract(covars.ls$chla, ., 
                                 fun=mean, small=T, method="bilinear"),
            KD_mn=raster::extract(covars.ls$KD_mn, ., 
@@ -285,8 +300,10 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
 extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
   fetch_thirds <- quantile(covars.ls$fetch$fetchsum, probs=(1:2)/3)
   grid.domain <- grid.domain %>% 
-    mutate(sst_day=raster::extract(covars.ls$sst_day, grid.domain, fun=mean, na.rm=T),
-           sst_night=raster::extract(covars.ls$sst_night, grid.domain, fun=mean, na.rm=T),
+    mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, grid.domain, fun=mean, na.rm=T),
+           sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, grid.domain, fun=mean, na.rm=T),
+           sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, grid.domain, fun=mean, na.rm=T),
+           sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, grid.domain, fun=mean, na.rm=T),
            chla=raster::extract(covars.ls$chla, grid.domain, fun=mean, na.rm=T),
            KD_mn=raster::extract(covars.ls$KD_mn, grid.domain, fun=mean, na.rm=T),
            KD_sd=raster::extract(covars.ls$KD_sd, grid.domain, fun=mean, na.rm=T),
