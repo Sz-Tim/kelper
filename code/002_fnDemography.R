@@ -109,14 +109,15 @@ growDens <- function(propOccupiedSpace, g0, g1, sizeClass) {
 #'
 #' @examples
 growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, pars) {
+  # Laminaria hyperborea exhibits a 'May cast', where the previous year's growth 
+  # is shed essentially in its entirety. For other less deciduous species, 
+  # FAI_new[j] would include FAI_orig[j] * A.mx[j,j] in the sum
   FAI_new <- rep(0, length(N_orig))
   # recruits: (surviving FAI) + (new growth within stage)
-  FAI_new[1] <- FAI_orig[1]*A.mx[1,1] +
-    N_orig[1]*A.mx[1,1]*pars$growthRateFrond[1]*(1-kappa)
+  FAI_new[1] <- N_orig[1]*A.mx[1,1]*pars$growthRateFrond[1]*(1-kappa)
   for(j in 2:length(N_orig)) {
     # others: (surviving FAI) + (new growth within stage) + (FAI of newcomers)
-    FAI_new[j] <- FAI_orig[j]*A.mx[j,j] +
-      N_orig[j]*A.mx[j,j]*pars$growthRateFrond[j]*(1-kappa)^pars$growthRateDensityShape +
+    FAI_new[j] <- N_orig[j]*A.mx[j,j]*pars$growthRateFrond[j] +
       N_orig[j-1]*A.mx[j,j-1]*exp(logAreaFrond.stage[j])
   }
   
