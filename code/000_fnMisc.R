@@ -182,13 +182,15 @@ setParameters <- function(path=NULL,
 
 
 
-loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL) {
+loadCovariates <- function(gis.dir=NULL, bbox=NULL, zscore=F, loadFile=NULL, saveFile=NULL) {
   if(is.null(loadFile)) {
     covars.ls <- list(
       fetch=dir(paste0(gis.dir, "fetch"), "^FetchUK_200m", full.names=T) %>% 
         read_csv(show_col_types=F) %>% 
         st_as_sf(coords=c("OSEast", "OSNorth"), crs=27700) %>% 
-        st_transform(4326),
+        st_transform(4326) %>% 
+        mutate(logFetch=log(fetchsum)) %>% 
+        select(logFetch),
       sstDayGrow_mn=dir(paste0(gis.dir, "climate"), 
                         "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
@@ -219,22 +221,14 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
       irrad_longterm=dir(paste0(gis.dir, "light"), 
                          "POWER_Regional_Climatology", full.names=T) %>%
         read_csv(skip=10, show_col_types=F) %>% 
-        st_as_sf(coords=c("LON", "LAT"), crs=4326),
+        st_as_sf(coords=c("LON", "LAT"), crs=4326) %>%
+        mutate(growingSeason=JAN+FEB+MAR+APR+MAY+JUN),
       irrad_monthly=dir(paste0(gis.dir, "light"), 
                         "POWER_Regional_monthly", full.names=T) %>%
         read_csv(skip=10, show_col_types=F) %>% 
         filter(JAN != -999) %>% select(-ANN) %>%
         group_by(PARAMETER, YEAR) %>% mutate(id=row_number()) %>% ungroup %>%
         pivot_longer(5:16, names_to="MONTH", values_to="PAR") %>%
-        st_as_sf(coords=c("LON", "LAT"), crs=4326),
-      irrad_daily=dir(paste0(gis.dir, "light"), 
-                      "POWER_Regional_Daily", full.names=T) %>%
-        map_dfr(., ~read_csv(.x, skip=10, show_col_types=F)) %>% 
-        mutate(DATE=case_when(is.na(DOY) ~ ymd(paste(YEAR, MO, DY, sep="-")),
-                              !is.na(DOY) ~ as_date(DOY, 
-                                                    origin=paste0(YEAR,"-01-01")))) %>% 
-        group_by(DATE) %>% mutate(id=row_number()) %>% ungroup %>%
-        pivot_longer(contains("_PAR_"), names_to="PARAMETER", values_to="PAR") %>%
         st_as_sf(coords=c("LON", "LAT"), crs=4326)
     )
     
@@ -243,12 +237,26 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
     
     covars.ls$irrad_growing.month <- covars.ls$irrad_monthly %>%
       filter(MONTH %in% c("JAN", "FEB", "MAR", "APR", "MAY", "JUN")) %>%
-      group_by(PARAMETER, YEAR, id) %>%
+      filter(grepl("ALLSKY", PARAMETER)) %>%
+      group_by(YEAR, id) %>%
       summarise(PAR=mean(PAR)) %>%
-      group_by(PARAMETER, id) %>%
+      group_by(id) %>%
       summarise(mnPAR=mean(PAR), sdPAR=sd(PAR)) %>%
-      st_join(irrad.grid, .) %>%
-      filter(grepl("ALLSKY", PARAMETER))
+      ungroup() %>% select(-id) %>%
+      st_join(irrad.grid %>% select(-id), .)
+    covars.ls <- covars.ls[-which(names(covars.ls)=="irrad_monthly")]
+    
+    if(zscore) {
+      for(i in seq_along(covars.ls)) {
+        if(class(covars.ls[[i]])=="RasterLayer") {
+          covars.ls[[i]] <- scale(covars.ls[[i]])
+        } else {
+          covars.ls[[i]] <- covars.ls[[i]] %>%
+            mutate(across(where(is.numeric), scale))
+        }
+      }
+    }
+    
     if(!is.null(saveFile)) {
       saveRDS(covars.ls, saveFile)
     }

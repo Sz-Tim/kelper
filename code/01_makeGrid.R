@@ -28,7 +28,7 @@ gis.dir <- "..\\..\\00_gis\\"
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 
 # datasets
-covars.ls <- loadCovariates(gis.dir, UK_bbox, zscore=T, saveFile="data\\covar_ls.rds")
+covars.ls <- loadCovariates(gis.dir, UK_bbox, zscore=T, saveFile="data\\covarZ_ls.rds")
 
 # make grid
 grid.domain <- UK_bbox %>%
