@@ -5,9 +5,51 @@
 
 # Miscellaneous helper functions associated with the KELPER project
 
-compileDatasets <- function(data.dir) {
+compileDatasets <- function(data.dir, supp.f=NULL) {
   
   library(tidyverse)
+  
+  if(!is.null(supp.f)) {
+    # read in data from Dan Smale -- requires different formatting
+    library(readxl)
+    supp.sheets <- excel_sheets(supp.f)[-1]
+    # Add this chunk somewhere else
+    # NOTE: I should assume 4 year olds = subcanopy for the growth rates
+    # ggplot(supp.raw$allometry, aes(factor(Age), weightFrond, fill=factor(depth))) + 
+    #   geom_boxplot() + scale_fill_viridis_d()
+    # BUT facet by region......?
+    supp.sites <- read_xlsx(supp.f, "siteLocations", skip=1) %>%
+      select(Location, lat, lon) %>%
+      rename(location=Location)
+    supp.raw <- map(supp.sheets, ~read_xlsx(supp.f, .x, skip=1)) %>% 
+      setNames(supp.sheets)
+    supp.ls <- list()
+    supp.raw$allometry <- supp.raw$allometry %>%
+      mutate(across(contains("length"), ~.x*10),
+             across(contains("width"), ~.x*10)) %>%
+      rename(depth=Depth, location=Location)
+    supp.ls$lengthStipe_weightStipe <- supp.raw$allometry %>% 
+      select(lengthStipe, weightStipe, depth, location)
+    supp.ls$lengthStipe_weightFrond <- supp.raw$allometry %>% 
+      select(lengthStipe, weightFrond, depth, location)
+    supp.ls$weightStipe_weightFrond <- supp.raw$allometry %>% 
+      select(weightStipe, weightFrond, depth, location)
+    supp.ls$lengthStipe_weightTotal <- supp.raw$allometry %>% 
+      mutate(weightTotal=weightHoldfast + weightStipe + weightFrond) %>%
+      select(lengthStipe, weightTotal, depth, location)
+    supp.ls$depth_N <- supp.raw$abundStage %>%
+      rename(depth=Depth, location=Location, N_canopy=CF_N, N_subcanopy=SC_N) %>%
+      mutate(N_recruits=DJ_N+UJ_N) %>%
+      select(depth, starts_with("N_"), location) %>%
+      bind_rows(supp.raw$densityCanopy %>% 
+                  rename(depth=Depth, location=Location, N_canopy=CanopyDensity) %>%
+                  select(location, N_canopy, depth)) %>%
+      rename(NperSqM=N_canopy)
+    supp.ls <- map(supp.ls, ~left_join(.x, supp.sites, by="location")) %>%
+      setNames(., paste0("Smale_Moore_", 1:length(.))) %>%
+      imap(~.x %>% mutate(reference=.y))
+
+  }
   
   site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"), col_select=1:3, show_col_types=F)
   digitizedMetadata <- read_csv(paste0(data.dir, "metadata.csv"), show_col_types=F) %>%
@@ -23,7 +65,9 @@ compileDatasets <- function(data.dir) {
           select(-contains(".meta"))) %>%
     setNames(c(fig.f, tab.f))
   
-  fig_var <- imap_dfr(digitized, 
+  
+  
+  fig_var <- imap_dfr(c(digitized, supp.ls), 
                       ~tibble(V1=names(.x)[1], V2=names(.x)[2], reference=.y)) %>%
     arrange(V1, V2) %>%
     mutate(vars=paste0(V1, "_", V2))
@@ -33,7 +77,7 @@ compileDatasets <- function(data.dir) {
     setNames(unique_comparisons)
   for(i in seq_along(varCombined.ls)) {
     refs <- fig_var$reference[fig_var$vars==unique_comparisons[i]]
-    varCombined.ls[[i]] <- do.call('rbind', digitized[refs])
+    varCombined.ls[[i]] <- do.call('bind_rows', c(digitized, supp.ls)[refs])
   }
   return(varCombined.ls)
 }
