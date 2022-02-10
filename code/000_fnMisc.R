@@ -182,7 +182,7 @@ setParameters <- function(path=NULL,
 
 
 
-loadCovariates <- function(gis.dir=NULL, bbox=NULL, zscore=F, loadFile=NULL, saveFile=NULL) {
+loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL) {
   if(is.null(loadFile)) {
     covars.ls <- list(
       fetch=dir(paste0(gis.dir, "fetch"), "^FetchUK_200m", full.names=T) %>% 
@@ -203,9 +203,6 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, zscore=F, loadFile=NULL, sav
       sstNightGrow_sd=dir(paste0(gis.dir, "climate"), 
                         "MODISA_L3m_NSST.*11W_49N", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
-      chla=dir(paste0(gis.dir, "chla"), 
-               "MODISA_L3m_CHL", full.names=T) %>%
-        raster() %>% crop(bbox),
       KD_mn=dir(paste0(gis.dir, "attenuation"), 
                 "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
@@ -245,17 +242,6 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, zscore=F, loadFile=NULL, sav
       ungroup() %>% select(-id) %>%
       st_join(irrad.grid %>% select(-id), .)
     covars.ls <- covars.ls[-which(names(covars.ls)=="irrad_monthly")]
-    
-    if(zscore) {
-      for(i in seq_along(covars.ls)) {
-        if(class(covars.ls[[i]])=="RasterLayer") {
-          covars.ls[[i]] <- scale(covars.ls[[i]])
-        } else {
-          covars.ls[[i]] <- covars.ls[[i]] %>%
-            mutate(across(where(is.numeric), scale))
-        }
-      }
-    }
     
     if(!is.null(saveFile)) {
       saveRDS(covars.ls, saveFile)
