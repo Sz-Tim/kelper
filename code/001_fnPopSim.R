@@ -15,22 +15,31 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   ## K_N = carrying capacity on abundance / m2
   ## K_FAI = carrying capacity on frond area / m2
   PAR <- pars$env$PAR_surface * exp(-pars$env$KD_mn * pars$depth)
-  maxStipeLen <- getPrediction(pars$sst_maxStipeLen, lmType, ndraws,
-                               tibble(sst_day=pars$env$sst_day))
+  maxStipeLen <- getPrediction(pars$canopyHeight, lmType, ndraws,
+                               tibble(sstDay_mn=pars$env$sstDay_mn))
   sizeClassLimits <- maxStipeLen * (0:3)/3
   sizeClassMdpts <- (sizeClassLimits+lag(sizeClassLimits))[-1]/2
-  K_N <- exp(getPrediction(pars$depth_N, lmType, ndraws, 
-                           tibble(PAR_atDepth=PAR, stage="canopy")))
-  K_FAI <- exp(getPrediction(pars$depth_FAI, lmType, ndraws, 
-                             tibble(logPAR=log(PAR))))
-  if(is.null(N0)) N0 <- runif(3, 0, K_N)
+  K_N <- exp(getPrediction(pars$N_canopy, lmType, ndraws, 
+                           tibble(PAR_atDepth=PAR, 
+                                  sstDay_mn=pars$env$sstDay_mn,
+                                  logFetch=log(pars$env$fetch))))
+  K_FAI <- exp(getPrediction(pars$FAI, lmType, ndraws, 
+                             tibble(logPAR=log(PAR),
+                                    logFetch=log(pars$env$fetch))))
+  if(is.null(N0)) N0 <- runif(3, 0, K_N*c(10,1,1))
   
   
-  #---- initial per capita mass by stage
-  logWtStipe.stage <- getPrediction(pars$lenStipe_wtStipe, lmType, ndraws,
-                                    tibble(logLenStipe=log(sizeClassMdpts)))
-  logWtFrond.stage <- getPrediction(pars$wtStipe_wtFrond, lmType, ndraws,
-                                    tibble(logWtStipe=logWtStipe.stage, propClear=1))
+  #---- per capita mass, area by stage
+  logWtStipe.stage <- getPrediction(pars$lenSt_to_wtSt, lmType, ndraws,
+                                    tibble(logLenStipe=log(sizeClassMdpts),
+                                           PAR_atDepth=PAR))
+  logWtFrond.stage <- getPrediction(pars$lenSt_to_wtFr, lmType, ndraws,
+                                    tibble(logLenStipe=log(sizeClassMdpts),
+                                           PAR_atDepth=PAR, 
+                                           sstDay_mn=pars$env$sstDay_mn))
+  logAreaFrond.stage <- getPrediction(pars$wtFr_to_arFr, lmType, ndraws,
+                                      tibble(PARdepth=PAR,
+                                             logWtFrond=logWtFrond.stage))
   
   
   #---- storage & initialization
@@ -38,16 +47,13 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   ## FAI[stage,year,season] = frond area / m2
   ## harvest[year] = log(grams harvested) / m2
   ## kappa[year,season,FAI|N] = proportion of K
-  ## biomass[[stipe|frond]][year,season] = g / m2
+  ## biomass[year,season] = g / m2
   N <- FAI <- array(dim=c(3, pars$tmax, 3))
   N[,1,1] <- N0
-  FAI[,1,1] <- N[,1,1] * exp(getPrediction(pars$wtFrond_areaFrond, lmType, ndraws,
-                                           tibble(PAR_atDepth=PAR, 
-                                                  logWtFrond=logWtFrond.stage)))
-  FAI[,1,1][is.na(FAI[,1,1])] <- 0
+  FAI[,1,1] <- N[,1,1] * exp(logAreaFrond.stage)
   harvest <- rep(0, pars$tmax) 
   kappa <- array(dim=c(pars$tmax, 3, 2))
-  biomass <- map(1:2, ~matrix(0, nrow=pars$tmax, 3)) %>% setNames(c("stipe", "frond"))
+  biomass <- matrix(0, nrow=pars$tmax, 3)
   
   
   #---- transition matrices
@@ -61,17 +67,11 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
     #---- growing season: 
     season <- 1
     kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI, N[3,year,season]/K_N))
-    # per capita allometry by stage | canopy
-    logWtFrond.stage <- getPrediction(pars$wtStipe_wtFrond, lmType, ndraws,
-                                      tibble(logWtStipe=logWtStipe.stage, 
-                                             propClear=1-kappa[year,season,1]))
-    logAreaFrond.stage <- getPrediction(pars$wtFrond_areaFrond, lmType, ndraws,
-                                        tibble(PAR_atDepth=PAR,
-                                               logWtFrond=logWtFrond.stage))
+
     # biomass at start of season
-    biomass$stipe[year,season] <- calcBiomass("stipe", N[,year,season], lwtStipe=logWtStipe.stage)
-    biomass$frond[year,season] <- calcBiomass("frond", N[,year,season], FAI[,year,season],
-                                              pars$areaFrond_wtFrond, lmType, ndraws, PAR)
+    biomass[year,season] <- calcBiomass(N[,year,season], FAI[,year,season],
+                                        logWtStipe.stage, pars$arFr_to_wtFr, 
+                                        lmType, ndraws, PAR)
     # growth
     growRate_i <- pars$growthRateStipeMax * (1-kappa[year,season,1])^pars$growthRateDensityShape
     prGrowToNext <- growRate_i/(sizeClassLimits-lag(sizeClassLimits))[-1]
@@ -91,17 +91,10 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
     #---- harvest:
     season <- 2
     kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI, N[3,year,season]/K_N))
-    # per capita allometry by stage | canopy
-    logWtFrond.stage <- getPrediction(pars$wtStipe_wtFrond, lmType, ndraws,
-                                      tibble(logWtStipe=logWtStipe.stage, 
-                                             propClear=1-kappa[year,season,1]))
-    logAreaFrond.stage <- getPrediction(pars$wtFrond_areaFrond, lmType, ndraws,
-                                        tibble(PAR_atDepth=PAR,
-                                               logWtFrond=logWtFrond.stage))
     # biomass at start of season
-    biomass$stipe[year,season] <- calcBiomass("stipe", N[,year,season], lwtStipe=logWtStipe.stage)
-    biomass$frond[year,season] <- calcBiomass("frond", N[,year,season], FAI[,year,season],
-                                              pars$areaFrond_wtFrond, lmType, ndraws, PAR)
+    biomass[year,season] <- calcBiomass(N[,year,season], FAI[,year,season],
+                                        logWtStipe.stage, pars$arFr_to_wtFr, 
+                                        lmType, ndraws, PAR)
     # harvest
     if(year %% pars$freqHarvest == 0) {
       stipeBiomass <- ifelse(pars$harvestTarget %in% c("all", "stipe"),
@@ -124,17 +117,11 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
     #---- non-growing season
     season <- 3
     kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI, N[3,year,season]/K_N))
-    # per capita allometry by stage | canopy
-    logWtFrond.stage <- getPrediction(pars$wtStipe_wtFrond, lmType, ndraws,
-                                      tibble(logWtStipe=logWtStipe.stage, 
-                                             propClear=1-kappa[year,season,1]))
-    logAreaFrond.stage <- getPrediction(pars$wtFrond_areaFrond, lmType, ndraws,
-                                        tibble(PAR_atDepth=PAR,
-                                               logWtFrond=logWtFrond.stage))
+    
     # biomass at start of season
-    biomass$stipe[year,season] <- calcBiomass("stipe", N[,year,season], lwtStipe=logWtStipe.stage)
-    biomass$frond[year,season] <- calcBiomass("frond", N[,year,season], FAI[,year,season],
-                                              pars$areaFrond_wtFrond, lmType, ndraws, PAR)
+    biomass[year,season] <- calcBiomass(N[,year,season], FAI[,year,season],
+                                        logWtStipe.stage, pars$arFr_to_wtFr, 
+                                        lmType, ndraws, PAR)
     if(year < pars$tmax) {
       # survival
       diag(A[[2]]) <- pars$survRate
