@@ -131,18 +131,13 @@ growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, par
 
 
 
-calcBiomass <- function(target, N_t, FAI_t=NULL, lmFit=NULL, lmType=NULL, 
-                        ndraws=NULL, PAR=NULL, lwtStipe=NULL) {
-  if(target=="stipe") {
-    mass <- sum(N_t * exp(lwtStipe))
-  }
-  if(target=="frond") {
-    mass <- sum(N_t * exp(getPrediction(lmFit, lmType, ndraws, 
-                                        tibble(PAR_atDepth=PAR,
-                                               logAreaFrond=log(FAI_t/N_t)))))
-    mass[is.nan(mass)] <- 0
-  }
-  return(mass)
+calcBiomass <- function(N_t, FAI_t=NULL, lwtStipe=NULL, lmFit=NULL, lmType=NULL, 
+                        ndraws=NULL, PAR=NULL) {
+  stipeMass <- N_t * exp(lwtStipe)
+  frondMass <- N_t * exp(getPrediction(lmFit, lmType, ndraws, 
+                                       tibble(PARdepth=PAR,
+                                              logAreaFrond=log(FAI_t/N_t))))
+  return(sum(stipeMass, frondMass, na.rm=T))
 }
 
 
