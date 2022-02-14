@@ -45,8 +45,8 @@ site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
 site.sf <- site.i %>% filter(!is.na(lon) & !is.na(lat)) %>%
   st_as_sf(coords=c("lon", "lat")) %>% st_set_crs(4326) 
 
-coast <- read_sf(paste0(gis.dir, "dataGeog\\ne_10m_land.shp")) %>%
-  add_row(read_sf(paste0(gis.dir, "dataGeog\\ne_10m_minor_islands.shp"))) %>%
+coast <- read_sf(paste0(gis.dir, "coastline\\ne_10m_land.shp")) %>%
+  add_row(read_sf(paste0(gis.dir, "coastline\\ne_10m_minor_islands.shp"))) %>%
   st_crop(UK_bbox)
 
 data.ls <- compileDatasets(data.dir)
@@ -144,9 +144,14 @@ for(i in seq_along(data.ls)) {
 
 PAR doesn't seem to match the pattern from Smith 2021... This is the source listed, but there isn't a specific layer listed and there are several plausible options. Since values were converted from surface irradience to PAR (Reis & Ribiero 2020), it's unlikely they directly used either of the PAR layers available. 
 ```{r overall_maps}
-plot(covars.ls$sst_day, main="SST (Day)")
+plot(covars.ls$sst_day, main="SST (Day)", zlim=c(0, 15))
 plot(covars.ls$sst_night, main="SST (Night)")
 plot(covars.ls$chla, main="chl a")
+plot(covars.ls$KD_mn, main="KD (MODIS)", zlim=c(0, 1.5))
+plot(covars.ls$PAR_mn, col=heat.colors(255), main="PAR (MODIS)")
+ggplot(covars.ls$irrad_growing.month) +
+  geom_sf(aes(fill=mnPAR)) + scale_fill_viridis_c() +
+  geom_sf(data=coast)
 
 covars.ls$irrad_longterm %>% 
   st_join(irrad.grid, .) %>%
