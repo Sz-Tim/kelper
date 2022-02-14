@@ -13,7 +13,7 @@
 ##-- set up
 
 # libraries and local functions
-pkgs <- c("raster", "lubridate", "tidyverse", "sf", "brms")
+pkgs <- c("raster", "lubridate", "tidyverse", "sf", "lme4", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 options(mc.cores=4)
@@ -47,16 +47,16 @@ data.ls <- compileDatasets(data.dir, supp.f) %>%
 ##-- Define equations
 
 reg.forms <- list(
-  lenSt_to_wtSt.lm=formula(logWtStipe ~ logLenStipe * PAR_atDepth),
-  lenSt_to_wtFr.lm=formula(logWtFrond ~ logLenStipe + sstDay_mn),
-  lenSt_to_wtTot.lm=formula(logWtTotal ~ logLenStipe * PAR_atDepth + sstDay_mn),
-  wtSt_to_wtFr.lm=formula(logWtFrond ~ logWtStipe * propClear),
-  wtFr_to_arFr.lm=formula(logAreaFrond ~ logWtFrond * PARdepth),
-  arFr_to_wtFr.lm=formula(logWtFrond ~ logAreaFrond * PARdepth),
-  canopyHeight.lm=formula(maxStipeLen ~ sstDay_mn),
-  FAI.lm=formula(logFAI ~ logPAR + logFetch),
-  N_stage.lm=formula(logN ~ stage * PAR_atDepth * sstDay_mn * logFetch),
-  N_canopy.lm=formula(logN ~ PAR_atDepth * sstDay_mn * logFetch)
+  lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * PAR_atDepth + (1|location)",
+  lenSt_to_wtFr.lm="logWtFrond ~ logLenStipe + sstDay_mn + (1|location)",
+  lenSt_to_wtTot.lm="logWtTotal ~ logLenStipe * PAR_atDepth + sstDay_mn + (1|location)",
+  wtSt_to_wtFr.lm="logWtFrond ~ logWtStipe * propClear + (1|location)",
+  wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PARdepth + (1|location)",
+  arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PARdepth + (1|location)",
+  canopyHeight.lm="maxStipeLen ~ sstDay_mn",
+  FAI.lm="logFAI ~ logPAR + fetch",
+  N_stage.lm="logN ~ stage * PAR_atDepth * sstDay_mn * fetch",
+  N_canopy.lm="logN ~ PAR_atDepth * sstDay_mn * fetch"
 )
 
 priors <- c(prior(normal(0, 5), class=b),
@@ -96,28 +96,26 @@ reg.dfs[[names(reg.forms)[5]]] <- data.ls$weightFrond_areaFrond %>%
 
 reg.dfs[[names(reg.forms)[6]]] <- reg.dfs[[names(reg.forms)[5]]]
 
-reg.dfs[[names(reg.forms)[7]]] <- data.ls$depth_maxStipeLen
+reg.dfs[[names(reg.forms)[7]]] <- data.ls$depth_maxStipeLen %>% mutate(location="a")
 
 reg.dfs[[names(reg.forms)[8]]] <- data.ls$depth_FAI %>%
   mutate(logFAI=log(FAI),
-         logPAR=log(PAR_atDepth),
-         logFetch=log(fetch))
+         logPAR=log(PAR_atDepth))
 
 reg.dfs[[names(reg.forms)[9]]] <- data.ls$lengthStipe_NperSqM %>%
   left_join(., data.ls$lengthStipe_NperSqM %>% 
-              group_by(PAR_atDepth) %>% 
+              group_by(location, PAR_atDepth) %>% 
               summarise(stipeMin=min(lengthStipe), stipeMax=max(lengthStipe),
                         top33=(stipeMax-stipeMin)*2/3 + stipeMin), 
-            by="PAR_atDepth") %>%
+            by=c("PAR_atDepth", "location")) %>%
   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
-  group_by(sstDay_mn, PAR_atDepth, fetch, stage) %>%
+  group_by(location, sstDay_mn, PAR_atDepth, fetch, stage) %>%
   summarise(NperSqM=sum(NperSqM)) %>%
   bind_rows(data.ls$depth_NperSqM %>% 
               select(2:4, sstDay_mn, PAR_atDepth, fetch) %>%
               rename(canopy=NperSqM, subcanopy=N_subcanopy, recruits=N_recruits) %>%
               pivot_longer(1:3, names_to="stage", values_to="NperSqM")) %>%
-  mutate(logN=log(NperSqM+1),
-         logFetch=log(fetch))
+  mutate(logN=log(NperSqM+1))
 
 reg.dfs[[names(reg.forms)[10]]] <- reg.dfs[[names(reg.forms)[9]]] %>%
   filter(stage=="canopy")
@@ -130,11 +128,17 @@ reg.dfs[[names(reg.forms)[10]]] <- reg.dfs[[names(reg.forms)[9]]] %>%
 ##-- Fit regressions
 
 if(lmType=="lm") {
-  reg.fit <- map2(reg.forms, reg.dfs, ~lm(.x, .y))
+  reg.fit <- vector("list", length(reg.forms)) %>% setNames(names(reg.forms))
+  for(i in seq_along(reg.forms)) {
+    if(grepl("location", reg.forms[[i]])) {
+      reg.fit[[i]] <- lmer(reg.forms[[i]], reg.dfs[[i]])
+    } else {
+      reg.fit[[i]] <- lm(reg.forms[[i]], reg.dfs[[i]]) 
+    }
+  }
 } else if(lmType=="brms") {
   reg.fit <- map2(reg.forms, reg.dfs, ~brm(.x, data=.y))
 }
-
 
 
 
