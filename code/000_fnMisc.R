@@ -260,22 +260,22 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
       i_sf <- data.ls[[i]] %>% 
         filter(!is.na(lat) & !is.na(lon)) %>%
         st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
-        mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, ., 
-                                       fun=mean, small=T, method="bilinear"),
-               sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, ., 
-                                         fun=mean, small=T, method="bilinear"),
-               sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, ., 
-                                         fun=mean, small=T, method="bilinear"),
-               sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, ., 
-                                           fun=mean, small=T, method="bilinear"),
-               KD_mn=raster::extract(covars.ls$KD_mn, ., 
-                                     fun=mean, small=T, method="bilinear"),
-               KD_sd=raster::extract(covars.ls$KD_sd, ., 
-                                     fun=mean, small=T, method="bilinear"),
-               PAR_mn=raster::extract(covars.ls$PAR_mn, ., 
-                                      fun=mean, small=T, method="bilinear"),
-               PAR_sd=raster::extract(covars.ls$PAR_sd, ., 
-                                      fun=mean, small=T, method="bilinear"),
+        mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, ., buffer=8e3,
+                                       fun=mean, small=T),
+               sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, ., buffer=8e3, 
+                                         fun=mean, small=T),
+               sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, ., buffer=8e3,
+                                         fun=mean, small=T),
+               sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, ., buffer=8e3,
+                                           fun=mean, small=T),
+               KD_mn=raster::extract(covars.ls$KD_mn, ., buffer=8e3, 
+                                     fun=mean, small=T),
+               KD_sd=raster::extract(covars.ls$KD_sd, ., buffer=8e3, 
+                                     fun=mean, small=T),
+               PAR_mn=raster::extract(covars.ls$PAR_mn, ., buffer=8e3, 
+                                      fun=mean, small=T),
+               PAR_sd=raster::extract(covars.ls$PAR_sd, ., buffer=8e3, 
+                                      fun=mean, small=T),
                PAR_POWER=st_join(., 
                                  covars.ls$irrad_growing.month, 
                                  left=T, join=st_nearest_feature)$mnPAR,
@@ -286,7 +286,9 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
                                   between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
                                   fetch > fetch_thirds[2] ~ 3))
       data.ls[[i]] <- left_join(data.ls[[i]], st_drop_geometry(i_sf))
-      if(any(!is.na(data.ls[[i]]$depth))) {
+      if(any(!is.na(data.ls[[i]]$depth) & 
+             !is.na(data.ls[[i]]$KD_mn) & 
+             !is.na(data.ls[[i]]$PAR_mn))) {
         data.ls[[i]] <- data.ls[[i]] %>%
           mutate(PAR_atDepth_POWER=PAR_POWER * exp(-KD_mn * depth),
                  PAR_atDepth_MODIS=PAR_mn * exp(-KD_mn * depth))
