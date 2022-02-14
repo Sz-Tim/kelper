@@ -22,10 +22,10 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   K_N <- exp(getPrediction(pars$N_canopy, lmType, ndraws, 
                            tibble(PAR_atDepth=PAR, 
                                   sstDay_mn=pars$env$sstDay_mn,
-                                  logFetch=log(pars$env$fetch))))
+                                  fetch=pars$env$fetch)))
   K_FAI <- exp(getPrediction(pars$FAI, lmType, ndraws, 
                              tibble(logPAR=log(PAR),
-                                    logFetch=log(pars$env$fetch))))
+                                    fetch=pars$env$fetch)))
   if(is.null(N0)) N0 <- runif(3, 0, K_N*c(10,1,1))
   
   

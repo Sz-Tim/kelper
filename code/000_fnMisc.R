@@ -254,7 +254,7 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
 
 
 extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch$fetchsum, probs=(1:2)/3)
+  fetch_thirds <- quantile(covars.ls$fetch$logFetch, probs=(1:2)/3)
   for(i in seq_along(data.ls)) {
     if(any(!is.na(data.ls[[i]]$lat))) {
       i_sf <- data.ls[[i]] %>% 
@@ -268,8 +268,6 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
                                          fun=mean, small=T, method="bilinear"),
                sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, ., 
                                            fun=mean, small=T, method="bilinear"),
-               chla=raster::extract(covars.ls$chla, ., 
-                                    fun=mean, small=T, method="bilinear"),
                KD_mn=raster::extract(covars.ls$KD_mn, ., 
                                      fun=mean, small=T, method="bilinear"),
                KD_sd=raster::extract(covars.ls$KD_sd, ., 
@@ -283,7 +281,7 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
                                  left=T, join=st_nearest_feature)$mnPAR,
                fetch=st_join(., 
                              covars.ls$fetch, 
-                             left=T, join=st_nearest_feature)$fetchsum,
+                             left=T, join=st_nearest_feature)$logFetch,
                fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
                                   between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
                                   fetch > fetch_thirds[2] ~ 3))
@@ -300,7 +298,7 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
 }
 
 extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch$fetchsum, probs=(1:2)/3)
+  fetch_thirds <- quantile(covars.ls$fetch$logFetch, probs=(1:2)/3)
   site.sf <- site.i %>% 
     filter(!is.na(lat) & !is.na(lon)) %>%
     st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
@@ -312,8 +310,6 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
                                        fun=mean, small=T, method="bilinear"),
            sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, ., 
                                        fun=mean, small=T, method="bilinear"),
-           chla=raster::extract(covars.ls$chla, ., 
-                                fun=mean, small=T, method="bilinear"),
            KD_mn=raster::extract(covars.ls$KD_mn, ., 
                                  fun=mean, small=T, method="bilinear"),
            KD_sd=raster::extract(covars.ls$KD_sd, ., 
@@ -327,7 +323,7 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
                              left=T, join=st_nearest_feature)$mnPAR,
            fetch=st_join(., 
                          covars.ls$fetch, 
-                         left=T, join=st_nearest_feature)$fetchsum,
+                         left=T, join=st_nearest_feature)$logFetch,
            fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
                               between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
                               fetch > fetch_thirds[2] ~ 3))
@@ -336,13 +332,12 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
 }
 
 extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch$fetchsum, probs=(1:2)/3)
+  fetch_thirds <- quantile(covars.ls$fetch$logFetch, probs=(1:2)/3)
   grid.domain <- grid.domain %>% 
     mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, grid.domain, fun=mean, na.rm=T),
            sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, grid.domain, fun=mean, na.rm=T),
            sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, grid.domain, fun=mean, na.rm=T),
            sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, grid.domain, fun=mean, na.rm=T),
-           chla=raster::extract(covars.ls$chla, grid.domain, fun=mean, na.rm=T),
            KD_mn=raster::extract(covars.ls$KD_mn, grid.domain, fun=mean, na.rm=T),
            KD_sd=raster::extract(covars.ls$KD_sd, grid.domain, fun=mean, na.rm=T),
            PAR_mn=raster::extract(covars.ls$PAR_mn, grid.domain, fun=mean, na.rm=T),
@@ -352,7 +347,7 @@ extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
             left=T) %>%
     group_by(id) %>% summarise(across(everything(), mean, na.rm=T)) %>% ungroup %>%
     st_join(.,
-            covars.ls$fetch %>% select(fetchsum) %>% rename(fetch=fetchsum), 
+            covars.ls$fetch %>% select(logFetch) %>% rename(fetch=logFetch), 
             left=T) %>% 
     group_by(id) %>% summarise(across(everything(), mean, na.rm=T)) %>% ungroup %>%
     mutate(fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
@@ -371,7 +366,7 @@ getPrediction <- function(mod, lmType, ndraws, new.df) {
   if(lmType=="brms") {
     pred <- colMeans(posterior_epred(mod, newdata=new.df, ndraws=ndraws))
   } else {
-    pred <- predict(mod, new.df)
+      pred <- predict(mod, new.df, re.form=NA)
   }
   return(pred)
 }
