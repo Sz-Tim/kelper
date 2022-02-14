@@ -15,11 +15,10 @@
 pkgs <- c("raster", "lubridate", "tidyverse", "sf")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
-options(mc.cores=4)
 
 # switches
 PAR_datasource <- c("MODIS", "POWER")[1]
-gridRes <- 1 # currently in arc-seconds
+gridRes <- 0.1 # currently in arc-seconds
 
 # directories
 gis.dir <- "..\\..\\00_gis\\"
@@ -28,7 +27,7 @@ gis.dir <- "..\\..\\00_gis\\"
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 
 # datasets
-covars.ls <- loadCovariates(gis.dir, UK_bbox, saveFile="data\\covar_ls.rds")
+covars.ls <- loadCovariates(gis.dir, UK_bbox, loadFile="data\\covar_ls.rds")
 
 # make grid
 grid.domain <- UK_bbox %>%
