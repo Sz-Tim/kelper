@@ -512,31 +512,31 @@ data.ls$month_biomass <- bind_rows(
   readxl::read_xlsx(pessarrodona.f, 2) %>% mutate(type="loss")
   ) %>%
   mutate(startDate=as_date(paste0("2017-", Month, "-01")),
-         totalChg=biomassChg*days_in_month(startDate))
+         chgInMonth=biomassChg*days_in_month(startDate))
 
 data.ls$month_biomass %>%
-  ggplot(aes(startDate, totalChg, colour=Location)) + 
+  ggplot(aes(startDate, chgInMonth, colour=Location)) + 
   geom_jitter(width=5) + stat_smooth(se=F) + 
   facet_grid(Species~type) +
   labs(x="", y="Biomass change (g/month)")
 
 # 'Sample' column is meaningless, so can't compare within individuals
 data.ls$month_biomass %>% 
-  ggplot(aes(Sample, totalChg, colour=type)) + geom_point() +
+  ggplot(aes(Sample, chgInMonth, colour=type)) + geom_point() +
   facet_wrap(~Species)
 
+# This subtracts the previous year's frond lost in May cast
 data.ls$month_biomass %>%
   filter(Species=="L. hyp") %>%
   mutate(MonthAbb=factor(Month, levels=month.name, labels=month.abb),
          Month=factor(Month, levels=month.name),
-         totalChg=biomassChg*days_in_month(as_date(paste0("2017-", Month, "-01"))),
          season=if_else(MonthAbb %in% month.abb[1:6], "growing", "non-growing")) %>%
   group_by(type, season, Month) %>%
-  summarise(mnChg=mean(totalChg)) %>%
+  summarise(mnChg=mean(chgInMonth)) %>%
   group_by(type, season) %>%
-  summarise(totalChg=sum(mnChg)) %>%
+  summarise(chgInMonth=sum(mnChg)) %>%
   group_by(season) %>%
-  pivot_wider(names_from="type", values_from="totalChg") %>%
+  pivot_wider(names_from="type", values_from="chgInMonth") %>%
   mutate(diff=accumulation-loss) %>%
   ggplot(aes(season, diff, fill=diff<0)) + 
   geom_hline(yintercept=0) + 
@@ -544,6 +544,31 @@ data.ls$month_biomass %>%
   scale_fill_manual(values=c("blue3", "red3")) +
   theme(legend.position="none") +
   labs(x="Season", y="Expected frond biomass change (g DW)")
+
+
+# Instead, the frond at the end of June = total accumulation - background erosion
+
+# 1. Assume non - May Cast months = chronic erosion
+erosion_monthly <- data.ls$month_biomass %>% 
+  filter(Species=="L. hyp") %>%
+  filter(type=="loss" & Month %in% month.name[-(3:4)]) %>%
+  group_by(Month) %>%
+  summarise(mnMonthlyLoss=mean(chgInMonth)) %>%
+  ungroup %>%
+  summarise(mnMonthlyLoss=mean(mnMonthlyLoss))
+# 2. Calculate net growth during growing season
+netTotalGrowth <- data.ls$month_biomass %>% 
+  filter(Species=="L. hyp") %>%
+  filter(type=="accumulation" & Month %in% month.name[1:6]) %>%
+  group_by(Month) %>%
+  summarise(mnMonthlyGrowth=mean(chgInMonth)) %>%
+  ungroup %>%
+  mutate(netMonthlyGrowth=mnMonthlyGrowth-erosion_monthly$mnMonthlyLoss) %>%
+  summarise(netTotalGrowth=sum(netMonthlyGrowth))
+
+# 3. Calculate % loss during non-growing season
+(erosion_monthly$mnMonthlyLoss*6)/netTotalGrowth$netTotalGrowth
+
 ```
 
 
