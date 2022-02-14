@@ -38,7 +38,8 @@ theme_set(theme_bw()); options(mc.cores=4)
 gis.dir <- "..\\..\\00_gis\\"
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 data.dir <- "..\\data\\digitized\\"
-data.ls <- compileDatasets(data.dir)
+supp.f <- "..\\data\\collab\\collab_all.xlsx"
+data.ls <- compileDatasets(data.dir, supp.f)
 
 site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
                    col_select=1:3, show_col_types=F)
@@ -310,7 +311,7 @@ canopy <- data.ls$day_growthStipe %>% filter(ageGroup > 2) %>%
 #              fit=canopy.hm$fitted, 
 #              phase=canopy.hm$phase, amp=canopy.hm$amplitude)
 
-day_seq <- seq(ymd("1970-01-01"), ymd("1970-6-30"), by="day")
+day_seq <- seq(ymd("1970-01-01"), ymd("1970-12-31"), by="day")
 y <- (yday(day_seq)-1)/c(364,365)[leap_year(day_seq)+1]
 # pred.1 <- mean(hm.1$fit) + hm.1$a * cos(2*pi*y) + hm.1$b * sin(2*pi*y)
 # pred.2 <- mean(hm.2$fit) + hm.2$a * cos(2*pi*y) + hm.2$b * sin(2*pi*y)
@@ -394,11 +395,11 @@ In Pessarodona (2018), maximum stipe length is contended to be related to temper
 if(rerun_modelFits) {
   if(lmType=="brms") {
     sst_maxStipeLen <- data.ls$depth_maxStipeLen %>%
-      brm(maxStipeLen ~ sst_day, data=.)
+      brm(maxStipeLen ~ sstDay_mn, data=.)
     saveRDS(sst_maxStipeLen, "temp\\brms_sst_maxStipeLen.rds")
   } else {
     sst_maxStipeLen <- data.ls$depth_maxStipeLen %>%
-      lm(maxStipeLen ~ sst_day, data=.)
+      lm(maxStipeLen ~ sstDay_mn, data=.)
     saveRDS(sst_maxStipeLen, "temp\\lm_sst_maxStipeLen.rds")
   }
 } else {
@@ -496,6 +497,7 @@ surv.df <- data.ls$stageFrom_stageTo %>%
   filter(stageTo=="dead") %>%
   mutate(survRate=1-rate,
          exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
+surv.df
 ```
 
 
@@ -580,6 +582,7 @@ The Pedersen 2012 model included stages for recruits, subcanopy, and canopy, and
 fecund.df <- data.ls$stageFrom_stageTo %>% 
   filter(stageFrom=="canopy" & stageTo=="recruits") %>%
   mutate(exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
+fecund.df
 ```
 
 
@@ -601,7 +604,6 @@ pars <- setParameters(
   prFullHarvest=0.7, freqHarvest=5, tmax=50, harvestTarget="stipe",
   survRate=filter(surv.df, exposure==env_i$fetchCat)$survRate^(1/2),
   settlementRateBg=filter(fecund.df, exposure==env_i$fetchCat)$rate,
-  # settlementRateBg=100,
   extraPars=list(
     depth=depth_i,
     env=env_i,
@@ -658,7 +660,7 @@ plot(cumsum(out$harvest/1e3), type="b", xlab="Year",
 ```
 
 
-```{r simulate_iterations}
+```{r simulate_iterations, eval=FALSE, include=FALSE}
 library(furrr)
 plan(multisession)
 out <- future_map(1:12, ~simulatePopulation_2Seasons(pars, lmType=lmType), 

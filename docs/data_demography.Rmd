@@ -33,12 +33,11 @@ So far, the data we have allows us to:
 
 We are still **missing**:
 
-- Survival by size
 - Effect of density on growth rate
 - Effect of density on survival rate
 - Effects of environmental covariates
   - SST (growth rate, survival rate, max length, allometry)
-  - chl a (growth rate, survival rate, max density, allometry)
+  - PAR (growth rate, survival rate, max density, allometry)
   - wave fetch (growth rate, survival rate, max length, allometry)
 
 
@@ -52,14 +51,21 @@ library(tidyverse); library(sf); library(brms); theme_set(theme_bw())
 source("code/000_fnMisc.R"); source("code/002_fnDemography.R")
 
 data.dir <- "..\\data\\digitized\\"
+gis.dir <- "..\\..\\00_gis\\"
+UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 data.ls <- compileDatasets(data.dir)
 
-site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"), col_select=1:3, show_col_types=F)
+site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"), 
+                   col_select=1:3, show_col_types=F)
+site.smale <- readxl::read_xlsx("..\\data\\SmaleData\\smale_all.xlsx", 1, skip=1) %>%
+  select(Site, lat, lon) %>% rename(location=Site) %>%
+  st_as_sf(coords=c("lon", "lat"), crs=4326)
 site.sf <- site.i %>% filter(!is.na(lon) & !is.na(lat)) %>%
-  st_as_sf(coords=c("lon", "lat")) %>% st_set_crs(4326)
-coast <- read_sf("../../0_gis/dataGeog/ne_10m_land.shp") %>%
-  add_row(read_sf("../../0_gis/dataGeog/ne_10m_minor_islands.shp")) %>%
-  st_crop(st_buffer(site.sf, 5e4))
+  st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
+  bind_rows(., site.smale)
+coast <- read_sf(paste0(gis.dir, "coastline\\ne_10m_land.shp")) %>%
+  add_row(read_sf(paste0(gis.dir, "coastline\\ne_10m_minor_islands.shp"))) %>%
+  st_crop(UK_bbox)
 ```
 
 
@@ -286,14 +292,15 @@ data.ls$depth_maxStipeLen %>%
   st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
   ggplot() + geom_sf(data=coast) + 
   geom_sf(aes(colour=maxStipeLen)) + scale_colour_viridis_c()
-ggplot(data.ls$depth_maxStipeLen, aes(sst_day, maxStipeLen)) +
+ggplot(data.ls$depth_maxStipeLen, aes(sstDay_mn, maxStipeLen)) +
   geom_point() + stat_smooth(method="lm")
 library(MuMIn); options(na.action="na.fail")
 full.data.df <- data.ls$depth_maxStipeLen %>%
   select(maxStipeLen, depth, PAR_mn, PAR_POWER, 
-         PAR_atDepth_POWER, PAR_atDepth_MODIS, sst_day, fetch) %>%
+         PAR_atDepth_POWER, PAR_atDepth_MODIS, sstDay_mn, sstNight_mn, sstDay_sd, sstNight_sd, fetch) %>%
   drop_na()
 dredge(lm(maxStipeLen ~ ., data=full.data.df)) %>% head
+options(na.action="na.omit")
 GGally::ggpairs(full.data.df)
 ```
 
