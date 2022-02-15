@@ -44,7 +44,19 @@ compileDatasets <- function(data.dir, supp.f=NULL) {
       bind_rows(supp.raw$densityCanopy %>% 
                   rename(depth=Depth, location=Location, N_canopy=CanopyDensity) %>%
                   select(location, N_canopy, depth)) %>%
-      rename(NperSqM=N_canopy)
+      rename(NperSqM=N_canopy) %>%
+      mutate(data_id=row_number())
+    supp.ls$depth_prCover <- supp.raw$abundStage %>%
+      rename(depth=Depth, location=Location, pr_canopy=CF_pct, pr_subcanopy=SC_pct) %>%
+      mutate(pr_recruits=DJ_N+UJ_N) %>%
+      select(depth, "pr_canopy", location, Rep) %>%
+      bind_rows(supp.raw$densityCanopy %>% 
+                  rename(depth=Depth, location=Location, 
+                         pr_canopy=CanopyPctCover,
+                         Rep=QuadratRep) %>%
+                  select(location, Rep, pr_canopy, depth)) %>%
+      mutate(across(starts_with("pr_"), ~.x/100),
+             data_id=row_number())
     supp.ls <- map(supp.ls, ~left_join(.x, supp.sites, by="location")) %>%
       setNames(., paste0("Smale_Moore_", 1:length(.))) %>%
       imap(~.x %>% mutate(reference=.y))
