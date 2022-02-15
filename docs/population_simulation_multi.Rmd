@@ -336,3 +336,105 @@ anim_save(paste0("figs\\biomass_", params$depth, ".gif"),
 
 
 
+```{r K_predictions}
+grid.domain <- grid.domain %>%
+  mutate(canopyHeight=getPrediction(lm.fit$canopyHeight.lm, lmType, 5, 
+                                    tibble(sstDay_mn=sstDay_mn)),
+         K_N_2=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 2),
+                                    sstDay_mn=sstDay_mn,
+                                    fetch=fetch)),
+         K_N_5=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 5),
+                                    sstDay_mn=sstDay_mn,
+                                    fetch=fetch)),
+         K_N_10=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 10),
+                                    sstDay_mn=sstDay_mn,
+                                    fetch=fetch)),
+         K_N_15=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 15),
+                                    sstDay_mn=sstDay_mn,
+                                    fetch=fetch)),
+         K_N_20=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 20),
+                                    sstDay_mn=sstDay_mn,
+                                    fetch=fetch)),
+         K_FAI_2=getPrediction(lm.fit$FAI.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 2),
+                                    fetch=fetch)),
+         K_FAI_5=getPrediction(lm.fit$FAI.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 5),
+                                    fetch=fetch)),
+         K_FAI_10=getPrediction(lm.fit$FAI.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 10),
+                                    fetch=fetch)),
+         K_FAI_15=getPrediction(lm.fit$FAI.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 15),
+                                    fetch=fetch)),
+         K_FAI_20=getPrediction(lm.fit$FAI.lm, lmType, 5,
+                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 20),
+                                    fetch=fetch)))
+
+
+ggplot(grid.domain) + geom_sf(colour=NA, aes(fill=canopyHeight)) +
+  scale_fill_viridis_c("Canopy height\n(mm)")
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
+  ggplot(aes(fill=K_N)) + geom_sf(colour=NA) +
+  scale_fill_viridis_c(expression(K[N])) + facet_grid(.~depth)
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
+  ggplot(aes(fill=K_N>1)) + geom_sf(colour=NA) +
+  facet_grid(.~depth)
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
+  ggplot(aes(fill=K_FAI)) + geom_sf(colour=NA) +
+  scale_fill_viridis_c(expression(K[FAI])) + facet_grid(.~depth)
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
+  ggplot(aes(fill=K_FAI>0)) + geom_sf(colour=NA) +
+  facet_grid(.~depth)
+
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
+  ggplot(aes(PAR_surface, K_N, colour=depth, group=depth)) + 
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
+  ggplot(aes(sstDay_mn, K_N, colour=depth, group=depth)) + 
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
+  ggplot(aes(PAR_surface, K_FAI, colour=depth, group=depth)) + 
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
+  ggplot(aes(sstDay_mn, K_FAI, colour=depth, group=depth)) + 
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+
+grid.domain %>% 
+  pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
+  ggplot(aes(fetch, K_FAI, colour=depth, group=depth)) + 
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+
+```
+
+
