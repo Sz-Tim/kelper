@@ -49,32 +49,27 @@ data.ls <- compileDatasets(data.dir, supp.f) %>%
 reg.forms <- list(
   lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * PAR_atDepth + ( 1 | location )",
   lenSt_to_wtFr.lm="logWtFrond ~ logLenStipe + sstDay_mn + ( 1 | location )",
-  # lenSt_to_wtTot.lm="logWtTotal ~ logLenStipe * PAR_atDepth + sstDay_mn + ( 1 | location )",
-  # wtSt_to_wtFr.lm="logWtFrond ~ logWtStipe * propClear + ( 1 | location )",
-  wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PARdepth + ( 1 | location )",
-  arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PARdepth + ( 1 | location )",
+  wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PARdepth",
+  arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PARdepth",
   canopyHeight.lm="maxStipeLen ~ sstDay_mn",
-  FAI.lm="logFAI ~ logPAR * fetch",
-  # N_stage.lm="logN ~ stage * PAR_atDepth * sstDay_mn + ( 1 | location )",
+  FAI.lm="FAI ~ PAR_atDepth + fetch",
   N_canopy.lm="logN ~ PAR_atDepth * sstDay_mn + ( 1 | location )"
 )
 
 reg.full <- list(
   lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * PAR_atDepth + ( 1 | location )",
   lenSt_to_wtFr.lm="logWtFrond ~ logLenStipe * sstDay_mn + ( 1 | location )",
-  # lenSt_to_wtTot.lm="logWtTotal ~ logLenStipe * PAR_atDepth * sstDay_mn + ( 1 | location )",
-  # wtSt_to_wtFr.lm="logWtFrond ~ logWtStipe * propClear + ( 1 | location )",
-  wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PARdepth + ( 1 | location )",
-  arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PARdepth + ( 1 | location )",
+  wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PARdepth",
+  arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PARdepth",
   canopyHeight.lm="maxStipeLen ~ sstDay_mn",
-  FAI.lm="logFAI ~ logPAR * fetch",
-  # N_stage.lm="logN ~ stage * PAR_atDepth * sstDay_mn * fetch + ( 1 | location )",
-  N_canopy.lm="logN ~ PAR_atDepth * sstDay_mn * fetch + ( 1 | location )"
+  FAI.lm="FAI ~ PAR_atDepth * fetch",
+  N_canopy.lm="N ~ PAR_atDepth * sstDay_mn * fetch + ( 1 | location )"
 )
 
-priors <- c(prior(normal(0, 5), class=b),
-            prior(normal(0, 5), class=Intercept),
-            prior(cauchy(0, 1), class=sigma))
+priors <- c(prior(normal(0, 10), class=b),
+            prior(normal(0, 10), class=Intercept),
+            prior(cauchy(0, 2), class=sigma),
+            prior(cauchy(0, 2), class=sd))
 
 
 
@@ -95,18 +90,10 @@ reg.dfs$lenSt_to_wtFr.lm <- data.ls$lengthStipe_weightFrond %>%
          logWtFrond=log(weightFrond)) %>%
   select(any_of(str_split(reg.full$lenSt_to_wtFr.lm, " ")[[1]]), location)
 
-# reg.dfs$lenSt_to_wtTot.lm <- data.ls$lengthStipe_weightTotal %>%
-#   mutate(logLenStipe=log(lengthStipe), 
-#          logWtTotal=log(weightTotal)) %>%
-#   select(any_of(str_split(reg.full$lenSt_to_wtTot.lm, " ")[[1]]), location)
-
-# reg.dfs$wtSt_to_wtFr.lm <- data.ls$weightStipe_weightFrond %>% 
-#   mutate(propClear=as.numeric(habitat=="clearing"),
-#          logWtFrond=log(weightFrond), 
-#          logWtStipe=log(weightStipe)) %>%
-#   select(any_of(str_split(reg.full$wtSt_to_wtFr.lm, " ")[[1]]), location)
-
 reg.dfs$wtFr_to_arFr.lm <- data.ls$weightFrond_areaFrond %>%
+  slice_sample(prop=1) %>% # randomize row order
+  group_by(reference, location, depth) %>%
+  slice_head(n=20) %>% ungroup %>%
   mutate(logWtFrond=log(weightFrond),
          logAreaFrond=log(areaFrond/1e4)) %>%
   rename(PARdepth=PAR_atDepth) %>%
@@ -120,26 +107,7 @@ reg.dfs$canopyHeight.lm <- data.ls$depth_maxStipeLen %>%
   select(any_of(str_split(reg.full$canopyHeight.lm, " ")[[1]]), location)
 
 reg.dfs$FAI.lm <- data.ls$depth_FAI %>%
-  mutate(logFAI=log(FAI),
-         logPAR=log(PAR_atDepth)) %>%
   select(any_of(str_split(reg.full$FAI.lm, " ")[[1]]), location)
-
-# reg.dfs$N_stage.lm <- data.ls$lengthStipe_NperSqM %>%
-#   left_join(., data.ls$lengthStipe_NperSqM %>% 
-#               group_by(location, PAR_atDepth) %>% 
-#               summarise(stipeMin=min(lengthStipe), stipeMax=max(lengthStipe),
-#                         top33=(stipeMax-stipeMin)*2/3 + stipeMin), 
-#             by=c("PAR_atDepth", "location")) %>%
-#   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
-#   group_by(location, sstDay_mn, PAR_atDepth, fetch, stage) %>%
-#   summarise(NperSqM=sum(NperSqM)) %>%
-#   bind_rows(data.ls$depth_NperSqM %>% 
-#               select(2:4, location, sstDay_mn, PAR_atDepth, fetch) %>%
-#               rename(canopy=NperSqM, subcanopy=N_subcanopy, recruits=N_recruits) %>%
-#               pivot_longer(1:3, names_to="stage", values_to="NperSqM")) %>%
-#   mutate(logN=log(NperSqM+1)) %>%
-#   ungroup %>%
-#   select(any_of(str_split(reg.full$N_stage.lm, " ")[[1]]), location)
 
 reg.dfs$N_canopy.lm <- data.ls$lengthStipe_NperSqM %>%
   left_join(., data.ls$lengthStipe_NperSqM %>% 
@@ -148,13 +116,14 @@ reg.dfs$N_canopy.lm <- data.ls$lengthStipe_NperSqM %>%
                         top33=(stipeMax-stipeMin)*2/3 + stipeMin), 
             by=c("PAR_atDepth", "location")) %>%
   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
-  group_by(location, sstDay_mn, PAR_atDepth, fetch, stage) %>%
+  group_by(location, reference, habitat, sstDay_mn, PAR_atDepth, fetch, stage) %>%
   summarise(NperSqM=sum(NperSqM)) %>%
   bind_rows(data.ls$depth_NperSqM %>% 
               select(2:4, location, sstDay_mn, PAR_atDepth, fetch) %>%
               rename(canopy=NperSqM, subcanopy=N_subcanopy, recruits=N_recruits) %>%
               pivot_longer(1:3, names_to="stage", values_to="NperSqM")) %>%
-  mutate(logN=log(NperSqM+1)) %>%
+  mutate(logN=log(NperSqM+1),
+         N=round(NperSqM)) %>%
   ungroup %>%
   filter(stage=="canopy") %>%
   select(any_of(str_split(reg.full$N_canopy.lm, " ")[[1]]), location)
@@ -163,13 +132,15 @@ reg.dfs <- map(reg.dfs, ~filter(.x, complete.cases(.x)))
 
 
 
+
 ########
 ##-- Fit regressions
 
-compareModels <- F
+compareModels <- T
+
+reg.fit <- vector("list", length(reg.forms)) %>% setNames(names(reg.forms))
 if(lmType=="lm") {
   options(na.action="na.fail")
-  reg.fit <- vector("list", length(reg.forms)) %>% setNames(names(reg.forms))
   for(i in seq_along(reg.forms)) {
     df_i <- reg.dfs[[i]]
     if(compareModels) {
@@ -190,8 +161,36 @@ if(lmType=="lm") {
   }
   options(na.action="na.omit")
 } else if(lmType=="brms") {
-  reg.fit <- map2(reg.forms, reg.dfs, ~brm(.x, data=.y, 
-                                           control=list(adapt_delta=0.9)))
+  reg.fit$lenSt_to_wtSt.lm <- brm(reg.forms$lenSt_to_wtSt.lm,
+                                  reg.dfs$lenSt_to_wtSt.lm, 
+                                  prior=priors, 
+                                  family=gaussian())
+  reg.fit$lenSt_to_wtFr.lm <- brm(reg.forms$lenSt_to_wtFr.lm,
+                                  reg.dfs$lenSt_to_wtFr.lm, 
+                                  prior=priors[-4,], 
+                                  family=gaussian())
+  reg.fit$wtFr_to_arFr.lm <- brm(reg.forms$wtFr_to_arFr.lm,
+                                 reg.dfs$wtFr_to_arFr.lm, 
+                                 prior=priors[-4,],
+                                 family=gaussian())
+  reg.fit$arFr_to_wtFr.lm <- brm(reg.forms$arFr_to_wtFr.lm,
+                                 reg.dfs$arFr_to_wtFr.lm, 
+                                 prior=priors[-4,], 
+                                 family=gaussian())
+  reg.fit$canopyHeight.lm <- brm(reg.forms$canopyHeight.lm,
+                                 reg.dfs$canopyHeight.lm, 
+                                 prior=c(priors[-c(2,4),],
+                                         prior(normal(1e3, 100), class=Intercept)), 
+                                 family=gaussian())
+  reg.fit$FAI.lm <- brm(reg.forms$FAI.lm,
+                        reg.dfs$FAI.lm, 
+                        prior=priors[-4,], 
+                        family=gaussian())
+  reg.fit$N_canopy.lm <- brm(bf(N ~ PAR_atDepth * sstDay_mn + fetch + (1|location),
+                                zi ~ PAR_atDepth * sstDay_mn + (1|location)), 
+                             data=reg.dfs$N_canopy.lm, 
+                             prior=priors[-3,],
+                             family=zero_inflated_negbinomial())
 }
 
 
@@ -199,7 +198,7 @@ if(lmType=="lm") {
 
 ########
 ##-- Save output
-
-saveRDS(reg.fit, paste0(lm.dir, "_fits.rds"))
-
+if(!compareModels | lmType=="brms") {
+  saveRDS(reg.fit, paste0(lm.dir, "_fits.rds"))
+}
 

@@ -19,13 +19,13 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
                                tibble(sstDay_mn=pars$env$sstDay_mn))
   sizeClassLimits <- maxStipeLen * (0:3)/3
   sizeClassMdpts <- (sizeClassLimits+lag(sizeClassLimits))[-1]/2
-  K_N <- exp(getPrediction(pars$N_canopy, lmType, ndraws, 
-                           tibble(PAR_atDepth=PAR, 
-                                  sstDay_mn=pars$env$sstDay_mn,
-                                  fetch=pars$env$fetch)))
-  K_FAI <- exp(getPrediction(pars$FAI, lmType, ndraws, 
-                             tibble(logPAR=log(PAR),
-                                    fetch=pars$env$fetch)))
+  K_N <- getPrediction(pars$N_canopy, lmType, ndraws, 
+                       tibble(PAR_atDepth=PAR, 
+                              sstDay_mn=pars$env$sstDay_mn,
+                              fetch=pars$env$fetch))
+  K_FAI <- getPrediction(pars$FAI, lmType, ndraws, 
+                         tibble(PAR_atDepth=PAR,
+                                fetch=pars$env$fetch))
   if(is.null(N0)) N0 <- runif(3, 0, K_N*c(10,1,1))
   
   
@@ -63,6 +63,7 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   
   #---- simulation loop
   for(year in 1:pars$tmax) {
+    harvestYear <- year %% pars$freqHarvest == 0
     
     #---- growing season: 
     season <- 1
@@ -96,7 +97,7 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
                                         logWtStipe.stage, pars$arFr_to_wtFr, 
                                         lmType, ndraws, PAR)
     # harvest
-    if(year %% pars$freqHarvest == 0) {
+    if(harvestYear) {
       stipeBiomass <- ifelse(pars$harvestTarget %in% c("all", "stipe"),
                              biomass$stipe[year,season], 
                              0)
@@ -119,9 +120,11 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
     kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI, N[3,year,season]/K_N))
     
     # biomass at start of season
-    biomass[year,season] <- calcBiomass(N[,year,season], FAI[,year,season],
-                                        logWtStipe.stage, pars$arFr_to_wtFr, 
-                                        lmType, ndraws, PAR)
+    biomass[year,season] <- ifelse(harvestYear,
+                                   calcBiomass(N[,year,season], FAI[,year,season],
+                                               logWtStipe.stage, pars$arFr_to_wtFr, 
+                                               lmType, ndraws, PAR),
+                                   biomass[year,2])
     if(year < pars$tmax) {
       # survival
       diag(A[[2]]) <- pars$survRate
