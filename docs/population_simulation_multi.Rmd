@@ -123,14 +123,13 @@ out.ls <- foreach(i=1:nrow(grid.i),
                   env=grid.i[i,],
                   lenSt_to_wtSt=lm.fit$lenSt_to_wtSt.lm,
                   lenSt_to_wtFr=lm.fit$lenSt_to_wtFr.lm,
-                  lenSt_to_wtTot=lm.fit$lenSt_to_wtTot.lm,
                   wtFr_to_arFr=lm.fit$wtFr_to_arFr.lm,
                   arFr_to_wtFr=lm.fit$arFr_to_wtFr.lm,
                   N_canopy=lm.fit$N_canopy.lm,
                   FAI=lm.fit$FAI.lm,
                   canopyHeight=lm.fit$canopyHeight.lm)
                 )
-  out <- map(1:3, ~simulatePopulation(par_i, lmType=lmType, ndraws=20))
+  out <- map(1:2, ~simulatePopulation(par_i, lmType=lmType, ndraws=20))
   list(out=imap_dfr(out, 
                     ~tibble(sim=.y, 
                             year=rep(1:par_i$tmax, 3),
@@ -140,9 +139,7 @@ out.ls <- foreach(i=1:nrow(grid.i),
                             FAI=c(.x$FAI[3,,]),
                             N.recruits=c(.x$N[1,,]),
                             N.subcanopy=c(.x$N[2,,]),
-                            N.canopy=c(.x$N[3,,]),
-                            K_N=.x$K_N,
-                            K_FAI=.x$K_FAI) %>%
+                            N.canopy=c(.x$N[3,,])) %>%
                       pivot_longer(contains("N."), names_to="stage", values_to="N") %>%
                       mutate(stage=factor(str_sub(stage, 3, -1), 
                                           levels=c("canopy", "subcanopy", "recruits")))) %>%
@@ -157,8 +154,6 @@ out.ls <- foreach(i=1:nrow(grid.i),
                                 N.recruits.June=c(.x$N[1,,2]),
                                 N.subcanopy.June=c(.x$N[2,,2]),
                                 N.canopy.June=c(.x$N[3,,2]),
-                                K_FAI=.x$K_FAI,
-                                K_N=.x$K_N,
                                 harvest=.x$harvest/1e3) %>%
                           mutate(cumulHarvest=cumsum(harvest))) %>%
          add_column(par_i$env) %>%
@@ -169,9 +164,7 @@ out.ls <- foreach(i=1:nrow(grid.i),
                             month=rep(c(1,6,7), each=par_i$tmax),
                             date=ymd(paste0(year, "-", month, "-01")),
                             PAR_depth=.x$PAR,
-                            biomass=c(.x$biomass),
-                            FAI=c(.x$FAI[3,,]),
-                            N.canopy=c(.x$N[3,,]))) %>%
+                            biomass=c(.x$biomass))) %>%
          add_column(par_i$env) %>%
          mutate(depth=par_i$depth))
 }
@@ -186,16 +179,10 @@ stopCluster(cl)
 out.df <- do.call(rbind, map(out.ls, ~.x$out))
 out.sum <- out.df %>% group_by(id, year, month, date, stage) %>%
   select(!c(sim)) %>%
-  summarise(N_q10=quantile(N, 0.1),
-            # N_q25=quantile(N, 0.25),
-            # N_q75=quantile(N, 0.75),
-            N_q90=quantile(N, 0.9),
-            FAI_q10=quantile(FAI, 0.1),
-            # FAI_q25=quantile(FAI, 0.25),
-            # FAI_q75=quantile(FAI, 0.75),
-            FAI_q90=quantile(FAI, 0.9),
-            K_FAI_q10=quantile(K_FAI, 0.1),
-            K_FAI_q90=quantile(K_FAI, 0.9),
+  summarise(#N_q10=quantile(N, 0.1),
+            # N_q90=quantile(N, 0.9),
+            # FAI_q10=quantile(FAI, 0.1),
+            # FAI_q90=quantile(FAI, 0.9),
             across(everything(), mean)) %>%
   ungroup
 out.sum.sf <- full_join(grid.domain %>% select(id), out.sum, by="id")
@@ -203,16 +190,8 @@ out.sum.sf <- full_join(grid.domain %>% select(id), out.sum, by="id")
 harvest.df <- do.call(rbind, map(out.ls, ~.x$harvest))
 harvest.sum <- harvest.df %>% group_by(id, year, date) %>%
   select(!c(sim)) %>%
-  summarise(#harvest_q10=quantile(harvest, 0.1),
-            # harvest_q25=quantile(harvest, 0.25),
-            # harvest_q75=quantile(harvest, 0.75),
-            # harvest_q90=quantile(harvest, 0.9),
-            # cumulHarvest_q10=quantile(cumulHarvest, 0.1),
-            # cumulHarvest_q25=quantile(cumulHarvest, 0.25),
-            # cumulHarvest_q75=quantile(cumulHarvest, 0.75),
+  summarise(#cumulHarvest_q10=quantile(cumulHarvest, 0.1),
             # cumulHarvest_q90=quantile(cumulHarvest, 0.9),
-            # K_FAI_q10=quantile(K_FAI, 0.1),
-            # K_FAI_q90=quantile(K_FAI, 0.9),
             across(everything(), mean)) %>%
   ungroup
 harvest.sum.sf <- full_join(grid.domain %>% select(id), harvest.sum, by="id")
@@ -220,18 +199,8 @@ harvest.sum.sf <- full_join(grid.domain %>% select(id), harvest.sum, by="id")
 mass.df <- do.call(rbind, map(out.ls, ~.x$biomass))
 mass.sum <- mass.df %>% group_by(id, year, month, date) %>%
   select(!c(sim)) %>%
-  summarise(biomass_q10=quantile(biomass, 0.1),
-            # biomass_q25=quantile(biomass, 0.25),
-            # biomass_q75=quantile(biomass, 0.75),
-            biomass_q90=quantile(biomass, 0.9),
-            FAI_q10=quantile(FAI, 0.1),
-            # FAI_q25=quantile(FAI, 0.25),
-            # FAI_q75=quantile(FAI, 0.75),
-            FAI_q90=quantile(FAI, 0.9),
-            N.canopy_q10=quantile(N.canopy, 0.1),
-            # N.canopy_q25=quantile(N.canopy, 0.25),
-            # N.canopy_q75=quantile(N.canopy, 0.75),
-            N.canopy_q90=quantile(N.canopy, 0.9),
+  summarise(#biomass_q10=quantile(biomass, 0.1),
+            # biomass_q90=quantile(biomass, 0.9),
             across(everything(), mean)) %>%
   ungroup
 mass.sum.sf <- full_join(grid.domain %>% select(id), mass.sum, by="id")
@@ -243,39 +212,30 @@ mass.sum.sf <- full_join(grid.domain %>% select(id), mass.sum, by="id")
 ```{r plot_output}
 sample_pops <- sample(1:nrow(grid.i), 10)
 out.sum %>% filter(month==6 & stage=="canopy") %>%
-  filter(id %in% sample_pops) %>% #filter(year > 5) %>%
+  filter(id %in% sample_pops) %>% 
   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(year, FAI, group=id,# ymin=FAI_q10, ymax=FAI_q90, 
+  ggplot(aes(year, FAI, group=id,
              colour=PAR_depth, fill=PAR_depth)) +
-  # geom_ribbon(alpha=0.25, colour=NA) +
-  # geom_ribbon(aes(ymin=FAI_q25, ymax=FAI_q75), 
-  #             alpha=0.5, colour=NA) +
   geom_line(size=1) + 
-  # geom_hline(aes(yintercept=K_FAI, colour=PAR_depth)) +
   scale_colour_viridis_c() + scale_fill_viridis_c() +
   ylim(0, NA) + facet_wrap(~fetchCat) +
   ggtitle(paste0("FAI dynamics (", params$depth, "m)"))
 out.sum %>% filter(month==6 & stage=="canopy") %>%
   filter(id %in% sample_pops) %>%
   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(year, FAI/K_FAI, group=id,# ymin=FAI_q10/K_FAI, ymax=FAI_q90/K_FAI,
+  ggplot(aes(year, FAI/K_FAI, group=id,
              colour=PAR_depth, fill=PAR_depth)) +
-  # geom_ribbon(alpha=0.25, colour=NA) +
-  # geom_ribbon(aes(ymin=FAI_q25/K_FAI, ymax=FAI_q75/K_FAI), 
-  #             alpha=0.5, colour=NA) +
   geom_line(size=1) + 
   scale_colour_viridis_c() + scale_fill_viridis_c() +
   ylim(0, NA) + facet_wrap(~fetchCat) +
   ggtitle(paste0("kappa_FAI dynamics (", params$depth, "m)"))
 
-out.sum %>% filter(month==6) %>% #filter(year > 5) %>%
+out.sum %>% filter(month==6) %>% 
   filter(id %in% sample_pops) %>%
   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(year, N, group=id,# ymin=N_q10, ymax=N_q90,
+  ggplot(aes(year, N, group=id,
              colour=PAR_depth, fill=PAR_depth)) +
-  # geom_ribbon(alpha=0.25, colour=NA) +
   geom_line(size=1) + 
-  # geom_hline(aes(yintercept=K_N, colour=PAR_depth)) +
   scale_colour_viridis_c() + scale_fill_viridis_c() +
   ylim(0, NA) + facet_grid(stage~fetchCat, scales="free_y") +
   ggtitle(paste0("Abundance dynamics (", params$depth, "m)"))
@@ -294,11 +254,8 @@ out.sum %>% filter(month==1 & stage=="canopy") %>%
 mass.sum %>% filter(month==6) %>%
   filter(id %in% sample_pops) %>%
   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(year, biomass, group=id,# ymin=stipe_q10, ymax=stipe_q90,
+  ggplot(aes(year, biomass, group=id,
              colour=PAR_depth, fill=PAR_depth)) +
-  # geom_ribbon(alpha=0.25, colour=NA) +
-  # geom_ribbon(aes(ymin=stipe_q25, ymax=stipe_q75), 
-  #             alpha=0.5, colour=NA) +
   geom_line(size=1) + 
   scale_colour_viridis_c() + scale_fill_viridis_c() +
   ylim(0, NA) + facet_wrap(~fetchCat) +
@@ -309,92 +266,18 @@ mass.sum %>%
   ggplot(aes(biomass, FAI, colour=PAR_depth)) + geom_point(shape=1) +
   scale_colour_viridis_c() + facet_grid(month~fetchCat)
 
-# harvest.sum %>% 
-#   ggplot(aes(year, cumulHarvest, ymin=cumulHarvest_q10, ymax=cumulHarvest_q90, group=id,
-#              colour=PAR_depth, fill=PAR_depth)) +
-#   geom_ribbon(alpha=0.25, colour=NA) +
-#   geom_ribbon(aes(ymin=cumulHarvest_q25, ymax=cumulHarvest_q75), 
-#               alpha=0.5, colour=NA) +
-#   geom_line(size=1) + 
-#   scale_colour_viridis_c() + scale_fill_viridis_c() +
-#   ylim(0, NA) + facet_wrap(~fetchCat)
-# 
-# harvest.sum %>% 
-#   filter(id %in% sample_pops) %>%
-#   ggplot(aes(year, cumulHarvest, ymin=cumulHarvest_q10, ymax=cumulHarvest_q90, group=id,
-#              colour=PAR_depth, fill=PAR_depth)) +
-#   geom_ribbon(alpha=0.25, colour=NA) +
-#   geom_ribbon(aes(ymin=cumulHarvest_q25, ymax=cumulHarvest_q75), 
-#               alpha=0.5, colour=NA) +
-#   geom_line(size=1) + 
-#   scale_colour_viridis_c() + scale_fill_viridis_c() +
-#   ylim(0, NA) + facet_wrap(~fetchCat)
-# 
-# 
-# harvest.sum.sf %>%
-#   filter(year==max(year)) %>%
-#   ggplot(aes(fill=cumulHarvest)) + 
-#   geom_sf() + scale_fill_viridis_c(paste(params$harvestTarget, "(kg)")) +
-#   ggtitle(paste0("Total harvest (", params$tmax, " yrs, ", params$depth, "m)"))
-# harvest.sum.sf %>%
-#   filter(date==max(date)) %>%
-#   ggplot(aes(fill=(cumulHarvest_q90-cumulHarvest_q10)/cumulHarvest)) + 
-#   geom_sf() + scale_fill_viridis_c(paste(params$harvestTarget, "(kg)")) +
-#   ggtitle(paste0("Total harvest CV (", params$tmax, " yrs, ", params$depth, "m)"))
-# 
-# out.sum.sf %>%
-#   filter(month==1 & stage=="canopy") %>%
-#   ggplot(aes(fill=FAI)) + 
-#   geom_sf(colour=NA) + scale_fill_viridis_c() +
-#   facet_wrap(~year, ncol=10) +
-#   ggtitle(paste0("January FAI (", params$depth, "m)"))
-# out.sum.sf %>%
-#   filter(month==1 & stage=="canopy") %>%
-#   ggplot(aes(fill=N)) + 
-#   geom_sf(colour=NA) + scale_fill_viridis_c() +
-#   facet_wrap(~year, ncol=10) +
-#   ggtitle(paste0("January canopy density (", params$depth, "m)"))
-# mass.sum.sf %>%
-#   filter(month==1) %>% filter(year > 4) %>%
-#   ggplot(aes(fill=biomass)) + 
-#   geom_sf(colour=NA) + scale_fill_viridis_c() +
-#   facet_wrap(~year, ncol=10) +
-#   ggtitle(paste0("January biomass (", params$depth, "m)"))
-# 
-# 
-# out.sum.sf %>%
-#   filter(month==6 & stage=="canopy") %>%
-#   ggplot(aes(fill=FAI)) + 
-#   geom_sf(colour=NA) + scale_fill_viridis_c() +
-#   facet_wrap(~year, ncol=10) +
-#   ggtitle(paste0("1 July FAI (", params$depth, "m)")) +
-#   theme(axis.text=element_blank(), axis.ticks=element_blank())
-# out.sum.sf %>%
-#   filter(month==6 & stage=="canopy") %>%
-#   ggplot(aes(fill=N)) + 
-#   geom_sf(colour=NA) + scale_fill_viridis_c() +
-#   facet_wrap(~year, ncol=10) +
-#   ggtitle(paste0("1 July canopy density (", params$depth, "m)"))
-# mass.sum.sf %>%
-#   filter(month==6) %>% filter(year > 4) %>%
-#   ggplot(aes(fill=biomass)) + 
-#   geom_sf(colour=NA) + scale_fill_viridis_c() +
-#   facet_wrap(~year, ncol=10) +
-#   ggtitle(paste0("1 July biomass (", params$depth, "m)"))
 
-
-out.sum.sf %>% 
+out.summary.sf <- out.sum.sf %>% 
   filter(month==6 & stage=="canopy") %>%
   group_by(id) %>%
-  summarise(FAI=mean(FAI)) %>%
+  summarise(FAI=mean(FAI),
+            N=mean(N))
+out.summary.sf %>%
   ggplot(aes(fill=FAI)) + 
   geom_sf(colour=NA) + scale_fill_viridis_c() +
   ggtitle(paste0("Mean 1 July FAI (", params$depth, "m)")) +
   theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
-out.sum.sf %>% 
-  filter(month==6 & stage=="canopy") %>%
-  group_by(id) %>%
-  summarise(N=mean(N)) %>%
+out.summary.sf %>%
   ggplot(aes(fill=N)) + 
   geom_sf(colour=NA) + scale_fill_viridis_c() +
   ggtitle(paste0("Mean 1 July canopy density (", params$depth, "m)")) +
@@ -406,14 +289,6 @@ mass.sum.sf %>%
   ggplot(aes(fill=biomass)) + 
   geom_sf(colour=NA) + scale_fill_viridis_c() +
   ggtitle(paste0("Mean 1 July biomass (", params$depth, "m)")) +
-  theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
-mass.sum.sf %>% 
-  filter(month==6) %>%
-  group_by(id) %>%
-  summarise(FAI=mean(FAI)) %>%
-  ggplot(aes(fill=log(FAI))) + 
-  geom_sf(colour=NA) + scale_fill_viridis_c() +
-  ggtitle(paste0("Mean 1 July log FAI (", params$depth, "m)")) +
   theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
 harvest.sum.sf %>%
   filter(year==max(year)) %>%
