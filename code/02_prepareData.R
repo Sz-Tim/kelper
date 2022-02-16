@@ -13,14 +13,14 @@
 ##-- set up
 
 # libraries and local functions
-pkgs <- c("raster", "lubridate", "tidyverse", "sf", "lme4", "brms")
+pkgs <- c("raster", "lubridate", "tidyverse", "sf", "lme4", "glmmTMB", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 options(mc.cores=4)
 
 # switches
 PAR_datasource <- c("MODIS", "POWER")[1]
-lmType <- c("lm", "brms")[2]
+lmType <- c("lm", "brms")[1]
 
 # directories
 gis.dir <- "..\\..\\00_gis\\"
@@ -53,7 +53,7 @@ reg.forms <- list(
   arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PARdepth",
   canopyHeight.lm="maxStipeLen ~ sstDay_mn",
   FAI.lm="FAI ~ PAR_atDepth + fetch",
-  N_canopy.lm="logN ~ PAR_atDepth * sstDay_mn + ( 1 | location )"
+  N_canopy.lm="N ~ PAR_atDepth * sstDay_mn + fetch"
 )
 
 reg.full <- list(
@@ -126,7 +126,7 @@ reg.dfs$N_canopy.lm <- data.ls$lengthStipe_NperSqM %>%
          N=round(NperSqM)) %>%
   ungroup %>%
   filter(stage=="canopy") %>%
-  select(any_of(str_split(reg.full$N_canopy.lm, " ")[[1]]), location)
+  select(any_of(str_split(reg.full$N_canopy.lm, " ")[[1]]), location, logN, N)
 
 reg.dfs <- map(reg.dfs, ~filter(.x, complete.cases(.x)))
 
@@ -136,61 +136,36 @@ reg.dfs <- map(reg.dfs, ~filter(.x, complete.cases(.x)))
 ########
 ##-- Fit regressions
 
-compareModels <- T
-
 reg.fit <- vector("list", length(reg.forms)) %>% setNames(names(reg.forms))
 if(lmType=="lm") {
-  options(na.action="na.fail")
-  for(i in seq_along(reg.forms)) {
-    df_i <- reg.dfs[[i]]
-    if(compareModels) {
-      form_i <- reg.full[[i]]
-    } else {
-      form_i <- reg.forms[[i]]
-    }
-    if(grepl("location", form_i)) {
-      full_i <- lmer(form_i, df_i)
-    } else {
-      full_i <- lm(form_i, df_i)
-    }
-    if(compareModels) {
-      reg.fit[[i]] <- MuMIn::dredge(full_i)
-    } else {
-      reg.fit[[i]] <- full_i
-    }
-  }
-  options(na.action="na.omit")
+  reg.fit$lenSt_to_wtSt.lm <- lmer(reg.forms$lenSt_to_wtSt.lm, reg.dfs$lenSt_to_wtSt.lm)
+  reg.fit$lenSt_to_wtFr.lm <- lmer(reg.forms$lenSt_to_wtFr.lm, reg.dfs$lenSt_to_wtFr.lm)
+  reg.fit$wtFr_to_arFr.lm <- lm(reg.forms$wtFr_to_arFr.lm, reg.dfs$wtFr_to_arFr.lm)
+  reg.fit$arFr_to_wtFr.lm <- lm(reg.forms$arFr_to_wtFr.lm, reg.dfs$arFr_to_wtFr.lm)
+  reg.fit$canopyHeight.lm <- lm(reg.forms$canopyHeight.lm, reg.dfs$canopyHeight.lm)
+  reg.fit$FAI.lm <- lm(reg.forms$FAI.lm, reg.dfs$FAI.lm)
+  reg.fit$N_canopy.lm <- glmmTMB(N ~ PAR_atDepth * sstDay_mn + fetch + (1|location),
+                                 ziformula= ~ PAR_atDepth * sstDay_mn + (1|location),
+                                 data=reg.dfs$N_canopy.lm, family=nbinom2)
 } else if(lmType=="brms") {
-  reg.fit$lenSt_to_wtSt.lm <- brm(reg.forms$lenSt_to_wtSt.lm,
-                                  reg.dfs$lenSt_to_wtSt.lm, 
-                                  prior=priors, 
-                                  family=gaussian())
-  reg.fit$lenSt_to_wtFr.lm <- brm(reg.forms$lenSt_to_wtFr.lm,
-                                  reg.dfs$lenSt_to_wtFr.lm, 
-                                  prior=priors[-4,], 
-                                  family=gaussian())
-  reg.fit$wtFr_to_arFr.lm <- brm(reg.forms$wtFr_to_arFr.lm,
-                                 reg.dfs$wtFr_to_arFr.lm, 
-                                 prior=priors[-4,],
-                                 family=gaussian())
-  reg.fit$arFr_to_wtFr.lm <- brm(reg.forms$arFr_to_wtFr.lm,
-                                 reg.dfs$arFr_to_wtFr.lm, 
-                                 prior=priors[-4,], 
-                                 family=gaussian())
-  reg.fit$canopyHeight.lm <- brm(reg.forms$canopyHeight.lm,
-                                 reg.dfs$canopyHeight.lm, 
+  reg.fit$lenSt_to_wtSt.lm <- brm(reg.forms$lenSt_to_wtSt.lm, reg.dfs$lenSt_to_wtSt.lm, 
+                                  prior=priors, family=gaussian())
+  reg.fit$lenSt_to_wtFr.lm <- brm(reg.forms$lenSt_to_wtFr.lm, reg.dfs$lenSt_to_wtFr.lm, 
+                                  prior=priors[-4,], family=gaussian())
+  reg.fit$wtFr_to_arFr.lm <- brm(reg.forms$wtFr_to_arFr.lm, reg.dfs$wtFr_to_arFr.lm, 
+                                 prior=priors[-4,], family=gaussian())
+  reg.fit$arFr_to_wtFr.lm <- brm(reg.forms$arFr_to_wtFr.lm, reg.dfs$arFr_to_wtFr.lm, 
+                                 prior=priors[-4,], family=gaussian())
+  reg.fit$canopyHeight.lm <- brm(reg.forms$canopyHeight.lm, reg.dfs$canopyHeight.lm, 
                                  prior=c(priors[-c(2,4),],
                                          prior(normal(1e3, 100), class=Intercept)), 
                                  family=gaussian())
-  reg.fit$FAI.lm <- brm(reg.forms$FAI.lm,
-                        reg.dfs$FAI.lm, 
-                        prior=priors[-4,], 
-                        family=gaussian())
+  reg.fit$FAI.lm <- brm(reg.forms$FAI.lm, reg.dfs$FAI.lm, 
+                        prior=priors[-4,], family=gaussian())
   reg.fit$N_canopy.lm <- brm(bf(N ~ PAR_atDepth * sstDay_mn + fetch + (1|location),
                                 zi ~ PAR_atDepth * sstDay_mn + (1|location)), 
                              data=reg.dfs$N_canopy.lm, 
-                             prior=priors[-3,],
-                             family=zero_inflated_negbinomial())
+                             prior=priors[-3,], family=zero_inflated_negbinomial())
 }
 
 
@@ -198,7 +173,6 @@ if(lmType=="lm") {
 
 ########
 ##-- Save output
-if(!compareModels | lmType=="brms") {
-  saveRDS(reg.fit, paste0(lm.dir, "_fits.rds"))
-}
+
+saveRDS(reg.fit, paste0(lm.dir, "_fits.rds"))
 

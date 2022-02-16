@@ -22,7 +22,8 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   K_N <- getPrediction(pars$N_canopy, lmType, ndraws, 
                        tibble(PAR_atDepth=PAR, 
                               sstDay_mn=pars$env$sstDay_mn,
-                              fetch=pars$env$fetch))
+                              fetch=pars$env$fetch, 
+                              location=NA))
   K_FAI <- getPrediction(pars$FAI, lmType, ndraws, 
                          tibble(PAR_atDepth=PAR,
                                 fetch=pars$env$fetch))
