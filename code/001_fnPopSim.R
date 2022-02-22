@@ -6,7 +6,7 @@
 # Population simulation functions
 
 simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
-  
+  library(tidyverse); library(brms); library(lme4); library(glmmTMB)
   #---- global parameters
   ## PAR = Photosynthetically active radiation at depth
   ## maxStipeLen = maximum expected canopy height
@@ -14,33 +14,36 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   ## sizeClassMdPts = midpoint per stage
   ## K_N = carrying capacity on abundance / m2
   ## K_FAI = carrying capacity on frond area / m2
-  PAR <- pars$env$PAR_surface * exp(-pars$env$KD_mn * pars$depth)
-  maxStipeLen <- getPrediction(pars$canopyHeight, lmType, ndraws,
-                               tibble(sstDay_mn=pars$env$sstDay_mn))
+  dynamicLandscape <- nrow(pars$env) == pars$tmax
+  env_yr <- tibble(PAR_atDepth=pars$env$PAR[1] * exp(-pars$env$KD[1] * pars$depth),
+                  sstDay_mn=pars$env$SST[1],
+                  fetch=pars$env$fetch[1],
+                  location=NA)
+  maxStipeLen <- getPrediction(pars$canopyHeight, lmType, ndraws, env_yr,
+                               pars$sc.df$canopyHeight.lm, "maxStipeLen")
   sizeClassLimits <- maxStipeLen * (0:3)/3
   sizeClassMdpts <- (sizeClassLimits+lag(sizeClassLimits))[-1]/2
-  K_N <- getPrediction(pars$N_canopy, lmType, ndraws, 
-                       tibble(PAR_atDepth=PAR, 
-                              sstDay_mn=pars$env$sstDay_mn,
-                              fetch=pars$env$fetch, 
-                              location=NA))
-  K_FAI <- getPrediction(pars$FAI, lmType, ndraws, 
-                         tibble(PAR_atDepth=PAR,
-                                fetch=pars$env$fetch))
-  if(is.null(N0)) N0 <- runif(3, 0, K_N*c(10,1,1))
+  K_N <- K_FAI <- rep(0, pars$tmax) 
+  K_N[] <- max(0, getPrediction(pars$N_canopy, lmType, ndraws, env_yr,
+                                pars$sc.df$N_canopy.lm, "N"))
+  K_FAI[] <- max(0, getPrediction(pars$FAI, lmType, ndraws, env_yr,
+                                  pars$sc.df$FAI.lm, "FAI"))
+  if(is.null(N0)) N0 <- K_N[1] * c(10,1,1)# * runif(3)
   
   
   #---- per capita mass, area by stage
   logWtStipe.stage <- getPrediction(pars$lenSt_to_wtSt, lmType, ndraws,
-                                    tibble(logLenStipe=log(sizeClassMdpts),
-                                           PAR_atDepth=PAR))
+                                    bind_cols(logLenStipe=log(sizeClassMdpts),
+                                              env_yr),
+                                    pars$sc.df$lenSt_to_wtSt.lm, "logWtStipe")
   logWtFrond.stage <- getPrediction(pars$lenSt_to_wtFr, lmType, ndraws,
-                                    tibble(logLenStipe=log(sizeClassMdpts),
-                                           PAR_atDepth=PAR, 
-                                           sstDay_mn=pars$env$sstDay_mn))
+                                    bind_cols(logLenStipe=log(sizeClassMdpts),
+                                              env_yr),
+                                    pars$sc.df$lenSt_to_wtFr.lm, "logWtFrond")
   logAreaFrond.stage <- getPrediction(pars$wtFr_to_arFr, lmType, ndraws,
-                                      tibble(PARdepth=PAR,
-                                             logWtFrond=logWtFrond.stage))
+                                      bind_cols(logWtFrond=logWtFrond.stage,
+                                                env_yr),
+                                      pars$sc.df$wtFr_to_arFr.lm, "logAreaFrond")
   
   
   #---- storage & initialization
@@ -48,7 +51,7 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   ## FAI[stage,year,season] = frond area / m2
   ## harvest[year] = log(grams harvested) / m2
   ## kappa[year,season,FAI|N] = proportion of K
-  ## biomass[year,season] = g / m2
+  ## biomass[year,season] = kg / m2
   N <- FAI <- array(dim=c(3, pars$tmax, 3))
   N[,1,1] <- N0
   FAI[,1,1] <- N[,1,1] * exp(logAreaFrond.stage)
@@ -65,17 +68,38 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   #---- simulation loop
   for(year in 1:pars$tmax) {
     harvestYear <- year %% pars$freqHarvest == 0
+    if(dynamicLandscape & year > 1) {
+      env_yr <- tibble(PAR_atDepth=pars$env$PAR[year] * exp(-pars$env$KD[year] * pars$depth),
+                       sstDay_mn=pars$env$SST[year],
+                       fetch=pars$env$fetch[year],
+                       location=NA)
+      K_N[year] <- max(0, getPrediction(pars$N_canopy, lmType, ndraws, env_yr,
+                                        pars$sc.df$N_canopy.lm, "N"))
+      K_FAI[year] <- max(0, getPrediction(pars$FAI, lmType, ndraws, env_yr,
+                                          pars$sc.df$FAI.lm, "FAI"))
+      logWtFrond.stage <- getPrediction(pars$lenSt_to_wtFr, lmType, ndraws,
+                                        bind_cols(logLenStipe=log(sizeClassMdpts),
+                                                  env_yr),
+                                        pars$sc.df$lenSt_to_wtFr.lm, "logWtFrond")
+      logAreaFrond.stage <- getPrediction(pars$wtFr_to_arFr, lmType, ndraws,
+                                          bind_cols(logWtFrond=logWtFrond.stage,
+                                                    env_yr),
+                                          pars$sc.df$wtFr_to_arFr.lm, "logAreaFrond")
+    }
     
     #---- growing season: 
     season <- 1
-    kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI, N[3,year,season]/K_N))
+    kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI[year], N[3,year,season]/K_N[year]))
 
     # biomass at start of season
-    biomass[year,season] <- calcBiomass(N[,year,season], FAI[,year,season],
+    biomass[year,season] <- calcBiomass(N[,year,season], 
                                         logWtStipe.stage, pars$arFr_to_wtFr, 
-                                        lmType, ndraws, PAR)
+                                        lmType, ndraws, 
+                                        bind_cols(logAreaFrond=log(FAI[,year,season]/N[,year,season]),
+                                                  env_yr),
+                                        pars$sc.df$arFr_to_wtFr.lm, "logWtFrond")
     # growth
-    growRate_i <- pars$growthRateStipeMax * (1-kappa[year,season,1])^pars$growthRateDensityShape
+    growRate_i <- pars$growthRateStipeMax * (1-max(kappa[year,season,]))^pars$growthRateDensityShape
     prGrowToNext <- growRate_i/(sizeClassLimits-lag(sizeClassLimits))[-1]
     A[[1]][2,1] <- pars$survRate[1]*prGrowToNext[1]
     A[[1]][3,2] <- pars$survRate[2]*prGrowToNext[2]
@@ -92,11 +116,14 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
     
     #---- harvest:
     season <- 2
-    kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI, N[3,year,season]/K_N))
+    kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI[year], N[3,year,season]/K_N[year]))
     # biomass at start of season
-    biomass[year,season] <- calcBiomass(N[,year,season], FAI[,year,season],
+    biomass[year,season] <- calcBiomass(N[,year,season], 
                                         logWtStipe.stage, pars$arFr_to_wtFr, 
-                                        lmType, ndraws, PAR)
+                                        lmType, ndraws, 
+                                        bind_cols(logAreaFrond=log(FAI[,year,season]/N[,year,season]),
+                                                  env_yr),
+                                        pars$sc.df$arFr_to_wtFr.lm, "logWtFrond")
     # harvest
     if(harvestYear) {
       stipeBiomass <- ifelse(pars$harvestTarget %in% c("all", "stipe"),
@@ -118,13 +145,16 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
     
     #---- non-growing season
     season <- 3
-    kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI, N[3,year,season]/K_N))
+    kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI[year], N[3,year,season]/K_N[year]))
     
     # biomass at start of season
     biomass[year,season] <- ifelse(harvestYear,
-                                   calcBiomass(N[,year,season], FAI[,year,season],
+                                   calcBiomass(N[,year,season], 
                                                logWtStipe.stage, pars$arFr_to_wtFr, 
-                                               lmType, ndraws, PAR),
+                                               lmType, ndraws, 
+                                               bind_cols(logAreaFrond=log(FAI[,year,season]/N[,year,season]),
+                                                         env_yr),
+                                               pars$sc.df$arFr_to_wtFr.lm, "logWtFrond"),
                                    biomass[year,2])
     if(year < pars$tmax) {
       # survival
@@ -138,8 +168,14 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
     
   }
   
+  PAR_byYear <- pars$env$PAR * exp(-pars$env$KD * pars$depth)
+  if(!dynamicLandscape) {
+    PAR_byYear <- rep(PAR_byYear, pars$tmax)
+  }
+  
   return(list(N=N, FAI=FAI, harvest=harvest, kappa=kappa,
-              K_FAI=K_FAI, K_N=K_N, PAR=PAR, biomass=biomass))
+              K_FAI=K_FAI, K_N=K_N, biomass=biomass,
+              PAR=PAR_byYear))
 }
 
 

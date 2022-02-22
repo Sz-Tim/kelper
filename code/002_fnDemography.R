@@ -132,14 +132,14 @@ growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, par
 
 
 
-calcBiomass <- function(N_t, FAI_t=NULL, lwtStipe=NULL, lmFit=NULL, lmType=NULL, 
-                        ndraws=NULL, PAR=NULL) {
+calcBiomass <- function(N_t, lwtStipe=NULL, lmFit=NULL, lmType=NULL, 
+                        ndraws=NULL, new.df=NULL, scale.df=NULL, y_var=NULL) {
   stipeMass <- N_t * exp(lwtStipe)
   frondMass <- N_t * exp(getPrediction(lmFit, lmType, ndraws, 
-                                       tibble(PARdepth=PAR,
-                                              logAreaFrond=log(FAI_t/N_t))))
-  return(sum(stipeMass, frondMass, na.rm=T))
+                                       new.df, scale.df, y_var))
+  return(sum(stipeMass, frondMass, na.rm=T)/1e3)
 }
+
 
 
 
