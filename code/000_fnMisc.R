@@ -196,24 +196,16 @@ setParameters <- function(path=NULL,
 
 loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL) {
   if(is.null(loadFile)) {
+    rast.proj <- dir(paste0(gis.dir, "climate"), "MODISA_L3m_SST.*11W", full.names=T)[1] %>%
+      raster() %>% crs
     covars.ls <- list(
-      fetch=dir(paste0(gis.dir, "fetch"), "^FetchUK_200m", full.names=T) %>% 
-        read_csv(show_col_types=F) %>% 
-        st_as_sf(coords=c("OSEast", "OSNorth"), crs=27700) %>% 
-        st_transform(4326) %>% 
-        mutate(logFetch=log(fetchsum)) %>% 
-        select(logFetch),
+      fetch=dir(paste0(gis.dir, "fetch"), "log10_eu200m1a", full.names=T) %>%
+        raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
       sstDayGrow_mn=dir(paste0(gis.dir, "climate"), 
                         "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
       sstDayGrow_sd=dir(paste0(gis.dir, "climate"), 
                         "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
-        map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
-      sstNightGrow_mn=dir(paste0(gis.dir, "climate"), 
-                        "MODISA_L3m_NSST.*11W_49N", full.names=T) %>%
-        map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
-      sstNightGrow_sd=dir(paste0(gis.dir, "climate"), 
-                        "MODISA_L3m_NSST.*11W_49N", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
       KD_mn=dir(paste0(gis.dir, "attenuation"), 
                 "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
@@ -227,26 +219,22 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
       PAR_sd=dir(paste0(gis.dir, "light"), 
                  "MODISA_L3m_PAR", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
-      irrad_longterm=dir(paste0(gis.dir, "light"), 
-                         "POWER_Regional_Climatology", full.names=T) %>%
-        read_csv(skip=10, show_col_types=F) %>% 
-        st_as_sf(coords=c("LON", "LAT"), crs=4326) %>%
-        mutate(growingSeason=JAN+FEB+MAR+APR+MAY+JUN),
       irrad_monthly=dir(paste0(gis.dir, "light"), 
                         "POWER_Regional_monthly", full.names=T) %>%
-        read_csv(skip=10, show_col_types=F) %>% 
+        map_dfr(~read_csv(.x, skip=9, show_col_types=F)) %>% 
         filter(JAN != -999) %>% select(-ANN) %>%
+        group_by(PARAMETER, YEAR, LAT, LON) %>%
+        summarise(across(everything(), mean)) %>%
         group_by(PARAMETER, YEAR) %>% mutate(id=row_number()) %>% ungroup %>%
         pivot_longer(5:16, names_to="MONTH", values_to="PAR") %>%
         st_as_sf(coords=c("LON", "LAT"), crs=4326)
     )
     
-    irrad.grid <- (st_bbox(covars.ls$irrad_longterm) + .25*c(-1,-1,1,1)) %>%
+    irrad.grid <- (st_bbox(covars.ls$irrad_monthly) + .25*c(-1,-1,1,1)) %>%
       st_make_grid(cellsize=c(0.5, 0.5)) %>% st_sf(id=1:length(.))
     
     covars.ls$irrad_growing.month <- covars.ls$irrad_monthly %>%
       filter(MONTH %in% c("JAN", "FEB", "MAR", "APR", "MAY", "JUN")) %>%
-      filter(grepl("ALLSKY", PARAMETER)) %>%
       group_by(YEAR, id) %>%
       summarise(PAR=mean(PAR)) %>%
       group_by(id) %>%
@@ -355,9 +343,8 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
                PAR_POWER=st_join(., 
                                  covars.ls$irrad_growing.month, 
                                  left=T, join=st_nearest_feature)$mnPAR,
-               fetch=st_join(., 
-                             covars.ls$fetch, 
-                             left=T, join=st_nearest_feature)$logFetch,
+               fetch=raster::extract(covars.ls$fetch, ., buffer=8e3, 
+                                      fun=mean, small=T),
                fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
                                   between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
                                   fetch > fetch_thirds[2] ~ 3))
@@ -375,8 +362,11 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
   return(data.ls)
 }
 
+
+
+
 extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch$logFetch, probs=(1:2)/3)
+  fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
   site.sf <- site.i %>% 
     filter(!is.na(lat) & !is.na(lon)) %>%
     st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
@@ -384,10 +374,6 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
                                      fun=mean, small=T, method="bilinear"),
            sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, ., 
                                      fun=mean, small=T, method="bilinear"),
-           sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, ., 
-                                       fun=mean, small=T, method="bilinear"),
-           sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, ., 
-                                       fun=mean, small=T, method="bilinear"),
            KD_mn=raster::extract(covars.ls$KD_mn, ., 
                                  fun=mean, small=T, method="bilinear"),
            KD_sd=raster::extract(covars.ls$KD_sd, ., 
@@ -399,9 +385,8 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
            PAR_POWER=st_join(., 
                              covars.ls$irrad_growing.month, 
                              left=T, join=st_nearest_feature)$mnPAR,
-           fetch=st_join(., 
-                         covars.ls$fetch, 
-                         left=T, join=st_nearest_feature)$logFetch,
+           fetch=raster::extract(covars.ls$fetch, ., 
+                                 fun=mean, small=T, method="bilinear"),
            fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
                               between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
                               fetch > fetch_thirds[2] ~ 3))
@@ -409,24 +394,25 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
   return(site.sf)
 }
 
+
+
+
+
 extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch$logFetch, probs=(1:2)/3)
+  fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
   grid.domain <- grid.domain %>% 
     mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, grid.domain, fun=mean, na.rm=T),
            sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, grid.domain, fun=mean, na.rm=T),
-           sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, grid.domain, fun=mean, na.rm=T),
-           sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, grid.domain, fun=mean, na.rm=T),
            KD_mn=raster::extract(covars.ls$KD_mn, grid.domain, fun=mean, na.rm=T),
            KD_sd=raster::extract(covars.ls$KD_sd, grid.domain, fun=mean, na.rm=T),
            PAR_mn=raster::extract(covars.ls$PAR_mn, grid.domain, fun=mean, na.rm=T),
-           PAR_sd=raster::extract(covars.ls$PAR_sd, grid.domain, fun=mean, na.rm=T)) %>%
+           PAR_sd=raster::extract(covars.ls$PAR_sd, grid.domain, fun=mean, na.rm=T),
+           fetch=raster::extract(covars.ls$fetch, grid.domain, fun=mean, na.rm=T)
+    ) %>%
     st_join(., 
             covars.ls$irrad_growing.month %>% select(mnPAR) %>% rename(PAR_POWER=mnPAR), 
             left=T) %>%
     group_by(id) %>% summarise(across(everything(), mean, na.rm=T)) %>% ungroup %>%
-    st_join(.,
-            covars.ls$fetch %>% select(logFetch) %>% rename(fetch=logFetch), 
-            left=T) %>% 
     group_by(id) %>% summarise(across(everything(), mean, na.rm=T)) %>% ungroup %>%
     mutate(fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
                               between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
@@ -501,6 +487,7 @@ getPrediction <- function(mod, lmType, ndraws, new.df, scale.df, y_var) {
   }
   return(pred)
 }
+
 
 
 
