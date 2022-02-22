@@ -265,8 +265,76 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
 }
 
 
+
+loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL) {
+  library(stars)
+  if(is.null(loadFile)) {
+    rast.proj <- dir(paste0(gis.dir, "climate"), "MODISA_L3m_SST.*11W", full.names=T)[1] %>%
+      raster() %>% crs
+    covars.ls <- list(
+      fetch=dir(paste0(gis.dir, "fetch"), "log10_eu200m1a", full.names=T) %>%
+        raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
+      sstDayGrow=dir(paste0(gis.dir, "climate"), 
+                     "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
+        setNames(., str_sub(., 84, 87)) %>%
+        map(raster) %>% stack() %>% crop(bbox) %>% 
+        st_as_stars() %>% st_as_sf() %>% 
+        pivot_longer(starts_with("X"), names_to="YEAR", values_to="SST") %>%
+        mutate(YEAR=str_sub(YEAR, 2, -1)),
+      KD_mn=dir(paste0(gis.dir, "attenuation"), 
+                "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
+        setNames(., str_sub(., 84, 87)) %>%
+        map(raster) %>% stack() %>% crop(bbox) %>% 
+        st_as_stars() %>% st_as_sf() %>% 
+        pivot_longer(starts_with("X"), names_to="YEAR", values_to="KD") %>%
+        mutate(YEAR=str_sub(YEAR, 2, -1)),
+      PAR_mn=dir(paste0(gis.dir, "light"), 
+                 "MODISA_L3m_PAR", full.names=T)  %>%
+        setNames(., str_sub(., 76, 79)) %>%
+        map(raster) %>% stack() %>% crop(bbox) %>% 
+        st_as_stars() %>% st_as_sf() %>% 
+        pivot_longer(starts_with("X"), names_to="YEAR", values_to="PAR") %>%
+        mutate(YEAR=str_sub(YEAR, 2, -1)),
+      irrad_monthly=dir(paste0(gis.dir, "light"), 
+                        "POWER_Regional_monthly", full.names=T) %>%
+        map_dfr(~read_csv(.x, skip=9, show_col_types=F)) %>% 
+        filter(JAN != -999) %>% select(-ANN) %>%
+        group_by(PARAMETER, YEAR, LAT, LON) %>%
+        summarise(across(everything(), mean)) %>%
+        group_by(PARAMETER, YEAR) %>% mutate(id=row_number()) %>% ungroup %>%
+        pivot_longer(5:16, names_to="MONTH", values_to="PAR") %>%
+        st_as_sf(coords=c("LON", "LAT"), crs=4326)
+    )
+    
+    irrad.grid <- (st_bbox(covars.ls$irrad_monthly) + .25*c(-1,-1,1,1)) %>%
+      st_make_grid(cellsize=c(0.5, 0.5)) %>% st_sf(id=1:length(.))
+    
+    covars.ls$irrad_growing.month <- covars.ls$irrad_monthly %>%
+      filter(MONTH %in% c("JAN", "FEB", "MAR", "APR", "MAY", "JUN")) %>%
+      group_by(YEAR, id) %>%
+      summarise(PAR=mean(PAR)) %>%
+      ungroup() %>% select(-id) %>%
+      st_join(irrad.grid %>% select(-id), .) %>%
+      filter(!is.na(YEAR))
+    covars.ls <- covars.ls[-which(names(covars.ls)=="irrad_monthly")]
+    
+    if(!is.null(saveFile)) {
+      saveRDS(covars.ls, saveFile)
+    }
+  } else {
+    covars.ls <- readRDS(loadFile)
+  }
+  return(covars.ls)
+}
+
+
+
+
+
+
+
 extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch$logFetch, probs=(1:2)/3)
+  fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
   for(i in seq_along(data.ls)) {
     if(any(!is.na(data.ls[[i]]$lat))) {
       i_sf <- data.ls[[i]] %>% 
@@ -276,10 +344,6 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
                                        fun=mean, small=T),
                sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, ., buffer=8e3, 
                                          fun=mean, small=T),
-               sstNight_mn=raster::extract(covars.ls$sstNightGrow_mn, ., buffer=8e3,
-                                         fun=mean, small=T),
-               sstNight_sd=raster::extract(covars.ls$sstNightGrow_sd, ., buffer=8e3,
-                                           fun=mean, small=T),
                KD_mn=raster::extract(covars.ls$KD_mn, ., buffer=8e3, 
                                      fun=mean, small=T),
                KD_sd=raster::extract(covars.ls$KD_sd, ., buffer=8e3, 
@@ -376,11 +440,69 @@ extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
 
 
 
-getPrediction <- function(mod, lmType, ndraws, new.df) {
+simulateLandscape <- function(grid.sf, var.sf, nYr, colName) {
+  # grid.sf: base grid
+  # var.sf: variable
+  # colName: column name with variable in var.sf
+  # nYr: number of years to simulate
+  library(mvtnorm)
+  # pair var with grid, then extract to matrix
+  var.mx <- grid.sf %>% select(id) %>%
+    st_join(., 
+            var.sf %>%
+              pivot_wider(names_from="YEAR", values_from=colName, names_prefix="y_") %>%
+              st_as_sf(),
+            left=T) %>%
+    group_by(id) %>% summarise(across(everything(), mean, na.rm=T)) %>% ungroup %>%
+    st_drop_geometry() %>% select(-id) %>% as.matrix()
+  # generate simulated values
+  na.ids <- which(is.na(var.mx), arr.ind=T)
+  if(nrow(na.ids)>0) {
+    for(i in 1:nrow(na.ids)) {
+      var.mx[na.ids[i,1], na.ids[i,2]] <- mean(var.mx[na.ids[i,1],], na.rm=T) +
+        rnorm(1, 0, 0.01)
+    }
+  }
+  if(colName=="KD") var.mx <- log(var.mx)
+  var.sim <- t(rmvnorm(nYr, rowMeans(var.mx), cov(t(var.mx))))
+  colnames(var.sim) <- paste0(colName, "_", 1:ncol(var.sim))
+  if(colName=="KD") var.sim <- exp(var.sim)
+  var.sim[var.sim < 0] <- min(var.sf[[colName]], na.rm=T)
+  # bind to grid
+  grid.updated <- grid.sf %>% bind_cols(as_tibble(var.sim)) %>% 
+    pivot_longer(starts_with(paste0(colName, "_")), 
+                 names_to="year", values_to=colName) %>%
+    mutate(year=as.numeric(str_sub(year, nchar(colName)+2, -1)))
+  return(grid.updated)
+}
+
+
+
+
+
+
+getPrediction <- function(mod, lmType, ndraws, new.df, scale.df, y_var) {
+  # center and scale predictors to match regression inputs
+  for(i in 1:ncol(new.df)) {
+    if(is.numeric(new.df[[i]])) {
+      scale.row <- which(scale.df$Par==names(new.df)[i])
+      new.df[[i]] <- (new.df[[i]] - scale.df$ctr[scale.row])/scale.df$scl[scale.row]
+    }
+  }
   if(lmType=="brms") {
     pred <- colMeans(posterior_epred(mod, newdata=new.df, ndraws=ndraws, re.form=NA))
   } else {
-      pred <- predict(mod, new.df, re.form=NA, type="response")
+    pred <- predict(mod, new.df, re.form=NA, type="response")
+  }
+  # de-center and de-scale predictions to natural scale
+  if(y_var != "N") {
+    scale.row <- which(scale.df$Par==y_var)
+    pred <- pred * scale.df$scl[scale.row] + scale.df$ctr[scale.row] 
   }
   return(pred)
 }
+
+
+
+
+
