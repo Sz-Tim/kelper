@@ -199,25 +199,29 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
     rast.proj <- dir(paste0(gis.dir, "climate"), "MODISA_L3m_SST.*11W", full.names=T)[1] %>%
       raster() %>% crs
     covars.ls <- list(
-      fetch=dir(paste0(gis.dir, "fetch"), "log10_eu200m1a", full.names=T) %>%
+      fetch=dir(paste0(gis.dir, "fetch"), "log10_UK200m_depth40_0na.tif$", full.names=T) %>%
+        raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
+      logSlope=dir(paste0(gis.dir, "bathymetry"), "UK_log10slope40.tif$", full.names=T) %>%
+        raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
+      slope=dir(paste0(gis.dir, "bathymetry"), "UK_slope40.tif$", full.names=T) %>%
         raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
       sstDayGrow_mn=dir(paste0(gis.dir, "climate"), 
-                        "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
+                        "MODISA_L3m_SST.*11W.*tif$", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
       sstDayGrow_sd=dir(paste0(gis.dir, "climate"), 
-                        "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
+                        "MODISA_L3m_SST.*11W_49N.*tif$", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
       KD_mn=dir(paste0(gis.dir, "attenuation"), 
-                "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
+                "MODISA_L3m_KD.*11W_49N.*tif$", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
       KD_sd=dir(paste0(gis.dir, "attenuation"), 
-                "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
+                "MODISA_L3m_KD.*11W_49N.*tif$", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
       PAR_mn=dir(paste0(gis.dir, "light"), 
-                 "MODISA_L3m_PAR", full.names=T) %>%
+                 "MODISA_L3m_PAR.*tif$", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(mean, na.rm=T),
       PAR_sd=dir(paste0(gis.dir, "light"), 
-                 "MODISA_L3m_PAR", full.names=T) %>%
+                 "MODISA_L3m_PAR.*tif$", full.names=T) %>%
         map(raster) %>% stack %>% crop(bbox) %>% calc(sd, na.rm=T),
       irrad_monthly=dir(paste0(gis.dir, "light"), 
                         "POWER_Regional_monthly", full.names=T) %>%
@@ -260,24 +264,28 @@ loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile
     rast.proj <- dir(paste0(gis.dir, "climate"), "MODISA_L3m_SST.*11W", full.names=T)[1] %>%
       raster() %>% crs
     covars.ls <- list(
-      fetch=dir(paste0(gis.dir, "fetch"), "log10_eu200m1a", full.names=T) %>%
+      fetch=dir(paste0(gis.dir, "fetch"), "log10_UK200m_depth40_0na.tif$", full.names=T) %>%
+        raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
+      logSlope=dir(paste0(gis.dir, "bathymetry"), "UK_log10slope40.tif$", full.names=T) %>%
+        raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
+      slope=dir(paste0(gis.dir, "bathymetry"), "UK_slope40.tif$", full.names=T) %>%
         raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
       sstDayGrow=dir(paste0(gis.dir, "climate"), 
-                     "MODISA_L3m_SST.*11W_49N", full.names=T) %>%
+                     "MODISA_L3m_SST.*11W_49N.*tif$", full.names=T) %>%
         setNames(., str_sub(., 84, 87)) %>%
         map(raster) %>% stack() %>% crop(bbox) %>% 
         st_as_stars() %>% st_as_sf() %>% 
         pivot_longer(starts_with("X"), names_to="YEAR", values_to="SST") %>%
         mutate(YEAR=str_sub(YEAR, 2, -1)),
       KD_mn=dir(paste0(gis.dir, "attenuation"), 
-                "MODISA_L3m_KD.*11W_49N", full.names=T) %>%
+                "MODISA_L3m_KD.*11W_49N.*tif$", full.names=T) %>%
         setNames(., str_sub(., 84, 87)) %>%
         map(raster) %>% stack() %>% crop(bbox) %>% 
         st_as_stars() %>% st_as_sf() %>% 
         pivot_longer(starts_with("X"), names_to="YEAR", values_to="KD") %>%
         mutate(YEAR=str_sub(YEAR, 2, -1)),
       PAR_mn=dir(paste0(gis.dir, "light"), 
-                 "MODISA_L3m_PAR", full.names=T)  %>%
+                 "MODISA_L3m_PAR.*tif$", full.names=T)  %>%
         setNames(., str_sub(., 76, 79)) %>%
         map(raster) %>% stack() %>% crop(bbox) %>% 
         st_as_stars() %>% st_as_sf() %>% 
@@ -321,44 +329,68 @@ loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile
 
 
 
-extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
-  for(i in seq_along(data.ls)) {
-    if(any(!is.na(data.ls[[i]]$lat))) {
-      i_sf <- data.ls[[i]] %>% 
-        filter(!is.na(lat) & !is.na(lon)) %>%
-        st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
-        mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, ., buffer=8e3,
+extractCovarsToDatasets <- function(data.ls, covars.ls=NULL, PAR_datasource, grid.sf=NULL) {
+  if(is.null(grid.sf)) {
+    # fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
+    fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
+    for(i in seq_along(data.ls)) {
+      if(any(!is.na(data.ls[[i]]$lat))) {
+        i_sf <- data.ls[[i]] %>% 
+          filter(!is.na(lat) & !is.na(lon)) %>%
+          st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
+          mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, ., buffer=8e3,
+                                           fun=mean, small=T),
+                 sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, ., buffer=8e3, 
+                                           fun=mean, small=T),
+                 KD_mn=raster::extract(covars.ls$KD_mn, ., buffer=8e3, 
                                        fun=mean, small=T),
-               sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, ., buffer=8e3, 
-                                         fun=mean, small=T),
-               KD_mn=raster::extract(covars.ls$KD_mn, ., buffer=8e3, 
-                                     fun=mean, small=T),
-               KD_sd=raster::extract(covars.ls$KD_sd, ., buffer=8e3, 
-                                     fun=mean, small=T),
-               PAR_mn=raster::extract(covars.ls$PAR_mn, ., buffer=8e3, 
-                                      fun=mean, small=T),
-               PAR_sd=raster::extract(covars.ls$PAR_sd, ., buffer=8e3, 
-                                      fun=mean, small=T),
-               PAR_POWER=st_join(., 
-                                 covars.ls$irrad_growing.month, 
-                                 left=T, join=st_nearest_feature)$mnPAR,
-               fetch=raster::extract(covars.ls$fetch, ., buffer=8e3, 
-                                      fun=mean, small=T),
-               fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
-                                  between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
-                                  fetch > fetch_thirds[2] ~ 3))
-      data.ls[[i]] <- left_join(data.ls[[i]], st_drop_geometry(i_sf))
-      if(any(!is.na(data.ls[[i]]$depth) & 
-             !is.na(data.ls[[i]]$KD_mn) & 
-             !is.na(data.ls[[i]]$PAR_mn))) {
-        data.ls[[i]] <- data.ls[[i]] %>%
-          mutate(PAR_atDepth_POWER=PAR_POWER * exp(-KD_mn * depth),
-                 PAR_atDepth_MODIS=PAR_mn * exp(-KD_mn * depth))
-        data.ls[[i]]$PAR_atDepth <- data.ls[[i]][[paste0("PAR_atDepth_", PAR_datasource)]]
+                 KD_sd=raster::extract(covars.ls$KD_sd, ., buffer=8e3, 
+                                       fun=mean, small=T),
+                 PAR_mn=raster::extract(covars.ls$PAR_mn, ., buffer=8e3, 
+                                        fun=mean, small=T),
+                 PAR_sd=raster::extract(covars.ls$PAR_sd, ., buffer=8e3, 
+                                        fun=mean, small=T),
+                 PAR_POWER=st_join(., 
+                                   covars.ls$irrad_growing.month, 
+                                   left=T, join=st_nearest_feature)$mnPAR,
+                 logSlope=raster::extract(covars.ls$logSlope, ., buffer=8e3, 
+                                          fun=mean, small=T),
+                 slope=raster::extract(covars.ls$slope, ., buffer=8e3, 
+                                       fun=mean, small=T),
+                 fetch=raster::extract(covars.ls$fetch, ., buffer=8e3, 
+                                       fun=mean, small=T),
+                 fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
+                                    between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
+                                    fetch > fetch_thirds[2] ~ 3))
+        data.ls[[i]] <- left_join(data.ls[[i]], st_drop_geometry(i_sf))
+        if(any(!is.na(data.ls[[i]]$depth) & 
+               !is.na(data.ls[[i]]$KD_mn) & 
+               !is.na(data.ls[[i]]$PAR_mn))) {
+          data.ls[[i]] <- data.ls[[i]] %>%
+            mutate(PAR_atDepth_POWER=PAR_POWER * exp(-KD_mn * depth),
+                   PAR_atDepth_MODIS=PAR_mn * exp(-KD_mn * depth))
+          data.ls[[i]]$PAR_atDepth <- data.ls[[i]][[paste0("PAR_atDepth_", PAR_datasource)]]
+        }
+      }
+    }
+  } else {
+    for(i in seq_along(data.ls)) {
+      if(any(!is.na(data.ls[[i]]$lat))) {
+        i_sf <- data.ls[[i]] %>% 
+          filter(!is.na(lat) & !is.na(lon)) %>%
+          st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
+          st_join(., grid.sf, left=T)
+        data.ls[[i]] <- left_join(data.ls[[i]], st_drop_geometry(i_sf))
+        if(any(!is.na(data.ls[[i]]$depth) & 
+               !is.na(data.ls[[i]]$KD) & 
+               !is.na(data.ls[[i]]$PAR))) {
+          data.ls[[i]] <- data.ls[[i]] %>%
+            mutate(PAR_atDepth=PAR * exp(-KD * depth))
+        }
       }
     }
   }
+  
   return(data.ls)
 }
 
@@ -366,7 +398,8 @@ extractCovarsToDatasets <- function(data.ls, covars.ls, PAR_datasource) {
 
 
 extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
+  # fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
+  fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
   site.sf <- site.i %>% 
     filter(!is.na(lat) & !is.na(lon)) %>%
     st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
@@ -385,6 +418,10 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
            PAR_POWER=st_join(., 
                              covars.ls$irrad_growing.month, 
                              left=T, join=st_nearest_feature)$mnPAR,
+           logSlope=raster::extract(covars.ls$logSlope, ., 
+                                    fun=mean, small=T, method="bilinear"),
+           slope=raster::extract(covars.ls$slope, ., 
+                                 fun=mean, small=T, method="bilinear"),
            fetch=raster::extract(covars.ls$fetch, ., 
                                  fun=mean, small=T, method="bilinear"),
            fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
@@ -399,7 +436,8 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
 
 
 extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
-  fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
+  # fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
+  fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
   grid.domain <- grid.domain %>% 
     mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, grid.domain, fun=mean, na.rm=T),
            sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, grid.domain, fun=mean, na.rm=T),
@@ -407,6 +445,8 @@ extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
            KD_sd=raster::extract(covars.ls$KD_sd, grid.domain, fun=mean, na.rm=T),
            PAR_mn=raster::extract(covars.ls$PAR_mn, grid.domain, fun=mean, na.rm=T),
            PAR_sd=raster::extract(covars.ls$PAR_sd, grid.domain, fun=mean, na.rm=T),
+           logSlope=raster::extract(covars.ls$logSlope, grid.domain, fun=mean, na.rm=T),
+           slope=raster::extract(covars.ls$slope, grid.domain, fun=mean, na.rm=T),
            fetch=raster::extract(covars.ls$fetch, grid.domain, fun=mean, na.rm=T)
     ) %>%
     st_join(., 
