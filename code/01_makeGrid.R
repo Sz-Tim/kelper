@@ -18,7 +18,7 @@ walk(dir("code", "^00.*R", full.names=T), source)
 
 # switches
 PAR_datasource <- c("MODIS", "POWER")[1]
-gridRes <- 0.1 # currently in arc-seconds
+gridRes <- 0.25 # currently in arc-seconds
 
 # directories
 gis.dir <- "..\\..\\00_gis\\"
@@ -27,15 +27,17 @@ gis.dir <- "..\\..\\00_gis\\"
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 
 # datasets
+# covarsFull.ls <- loadCovariates_full(gis.dir, UK_bbox, saveFile="data\\covarFull_ls.rds")
 covars.ls <- loadCovariates(gis.dir, UK_bbox, loadFile="data\\covar_ls.rds")
 
 # make grid
-grid.domain <- UK_bbox %>%
+grid.mn <- UK_bbox %>%
   st_make_grid(cellsize=c(gridRes, gridRes)) %>%
   st_sf(id=1:length(.)) %>%
   extractCovarsToGrid(., covars.ls, PAR_datasource) %>%
-  filter(!is.na(KD_mn) & !is.na(PAR_surface) & !is.na(fetch)) %>%
+  filter(!is.na(KD_sd) & !is.na(PAR_surface) & !is.na(fetch)) %>%
   mutate(id=row_number())
 
-# save as shp
-st_write(grid.domain, paste0("data\\grid_", gridRes, ".gpkg"), append=F)
+# save as gpkg
+st_write(grid.mn, glue::glue("data\\grid_{gridRes}_{PAR_datasource}.gpkg"), append=F)
+
