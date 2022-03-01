@@ -13,14 +13,15 @@
 ##-- set up
 
 # libraries and local functions
-pkgs <- c("raster", "lubridate", "tidyverse", "sf", "lme4", "glmmTMB", "brms")
+pkgs <- c("raster", "glue", "lubridate", "tidyverse", "sf", "lme4", "glmmTMB", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 options(mc.cores=4)
 
 # switches
-PAR_datasource <- c("MODIS", "POWER")[2]
+PAR_datasource <- c("MODIS", "POWER")[1]
 lmType <- c("lm", "brms")[2]
+gridRes <- 0.25
 
 # directories
 gis.dir <- "..\\..\\00_gis\\"
@@ -28,14 +29,12 @@ data.dir <- "..\\data\\digitized\\"
 lm.dir <- paste0("data\\", lmType)
 supp.f <- "..\\data\\collab\\collab_all.xlsx"
 
-# maximum extent for covariates
-UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
-
 # datasets
-covars.ls <- loadCovariates(gis.dir, UK_bbox, loadFile="data\\covar_ls.rds")
+grid.sf <- st_read(glue("data\\grid_{gridRes}_{PAR_datasource}.gpkg")) %>%
+  rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn)
+covars.ls <- loadCovariates(loadFile="data\\covar_ls.rds")
 data.ls <- compileDatasets(data.dir, supp.f) %>%
-  extractCovarsToDatasets(., covars.ls, PAR_datasource)
-
+  extractCovarsToDatasets(., grid.sf=grid.sf)
 
 
 
