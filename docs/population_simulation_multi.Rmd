@@ -21,7 +21,7 @@ editor_options:
 
 # Overview
 
-This script simulates an individual population using data from the literature.
+This script simulates a grid of populations.
 
 
 ```{r setup, echo=F, include=F}
@@ -30,21 +30,21 @@ knitr::opts_knit$set(root.dir=rprojroot::find_rstudio_root_file())
 ```
 
 ```{r workspace, echo=F, include=F, message=F, warning=F}
-pkgs <- c("raster", "lubridate", "tidyverse", "sf", "lme4", "brms")
+pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "lme4", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw()); options(mc.cores=12)
 
 gis.dir <- "..\\..\\00_gis\\"
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
-coast <- read_sf(paste0(gis.dir, "coastline\\ne_10m_land.shp")) %>%
-  add_row(read_sf(paste0(gis.dir, "coastline\\ne_10m_minor_islands.shp"))) %>%
+coast <- read_sf(glue("{gis.dir}coastline\\ne_10m_land.shp")) %>%
+  add_row(read_sf(glue("{gis.dir}coastline\\ne_10m_minor_islands.shp"))) %>%
   st_crop(UK_bbox)
 data.dir <- "..\\data\\digitized\\"
 supp.f <- "..\\data\\collab\\collab_all.xlsx"
 data.ls <- compileDatasets(data.dir, supp.f)
 
-site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
+site.i <- read_csv(glue("{data.dir}sitesDigitized.csv"),
                    col_select=1:3, show_col_types=F) %>%
   bind_rows(readxl::read_xlsx(supp.f, "siteLocations", skip=1) %>%
       select(Location, lat, lon) %>% rename(location=Location)) %>%
@@ -61,17 +61,19 @@ gridRes <- 0.25
 
 ```{r covariates}
 covars.ls <- loadCovariates(gis.dir, UK_bbox, loadFile="data\\covar_ls.rds")
-data.ls <- extractCovarsToDatasets(data.ls, covars.ls, PAR_datasource)
+covars.full <- loadCovariates_full(gis.dir, UK_bbox, loadFile="data\\covarFull_ls.rds")
 site.sf <- extractCovarsToPts(site.i, covars.ls, PAR_datasource)
-grid.domain <- st_read(paste0("data\\grid_", gridRes, ".gpkg"))
+grid.sf <- st_read(glue("data\\grid_{gridRes}_{PAR_datasource}.gpkg"))
 ```
 
 
 # Regressions
 
 ```{r load_regressions}
-lm.fit <- readRDS(paste0("data\\", lmType, "_fits.rds"))
+lm.fit <- readRDS(glue("data\\{lmType}_{PAR_datasource}_fits.rds"))
+lm.mnsd <- readRDS(glue("data\\dfs_mn_sd_{PAR_datasource}.rds"))
 ```
+
 
 ```{r load_surv_fecund}
 surv.df <- data.ls$stageFrom_stageTo %>% 
@@ -88,8 +90,8 @@ fecund.df <- data.ls$stageFrom_stageTo %>%
 # Parameter list
 
 ```{r set_parameters}
-params <- list(tmax=100,
-               depth=2,
+params <- list(tmax=50,
+               depth=5,
                prFullHarvest=0, 
                freqHarvest=300
                )
@@ -97,20 +99,38 @@ params <- list(tmax=100,
 sites_pool <- site.sf %>% filter(!is.na(KD_mn)) %>% st_drop_geometry() %>%
   mutate(id=row_number())
 grid.i <- sites_pool
-grid.i <- grid.domain %>% st_drop_geometry()
+grid.i <- grid.sf %>% st_drop_geometry() %>%
+  rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn)
 ```
 
 
 # Run simulation
 
+```{r simulate_landscape}
+grid.sim <- grid.sf %>% select(id) %>%
+  simulateLandscape(covars.full$sstDayGrow, params$tmax, "SST") %>%
+  full_join(., 
+            simulateLandscape(grid.sf %>% select(id), 
+                              covars.full$KD_mn, params$tmax, "KD") %>%
+              st_drop_geometry()) %>%
+  full_join(., 
+            simulateLandscape(grid.sf %>% select(id), 
+                              covars.full$PAR_mn, params$tmax, "PAR") %>%
+              st_drop_geometry()) %>%
+  left_join(., grid.sf %>% st_drop_geometry() %>% select(id, fetch, fetchCat))
+rm(covars.full)
+```
+
+
 ```{r run_simulations}
-library(doParallel)
+library(doSNOW)
 library(tictoc)
-cl <- makePSOCKcluster(12)
-registerDoParallel(cl)
+cl <- makeCluster(12)
+registerDoSNOW(cl)
 tic()
 out.ls <- foreach(i=1:nrow(grid.i), 
-                  .packages=c("tidyverse", "brms", "lubridate")) %dopar% {
+                  .packages=c("tidyverse", "lubridate", "glue", "sf")) %dopar% {
+  id_i <- grid.i$id[i]                  
   par_i <- setParameters(
                 tmax=params$tmax, 
                 prFullHarvest=params$prFullHarvest, 
@@ -120,6 +140,7 @@ out.ls <- foreach(i=1:nrow(grid.i),
                 settlementRateBg=filter(fecund.df, exposure==grid.i$fetchCat[i])$rate,
                 extraPars=list(
                   depth=params$depth,
+                  # env=grid.sim %>% st_drop_geometry() %>% filter(id==id_i),
                   env=grid.i[i,],
                   lenSt_to_wtSt=lm.fit$lenSt_to_wtSt.lm,
                   lenSt_to_wtFr=lm.fit$lenSt_to_wtFr.lm,
@@ -127,15 +148,18 @@ out.ls <- foreach(i=1:nrow(grid.i),
                   arFr_to_wtFr=lm.fit$arFr_to_wtFr.lm,
                   N_canopy=lm.fit$N_canopy.lm,
                   FAI=lm.fit$FAI.lm,
-                  canopyHeight=lm.fit$canopyHeight.lm)
+                  canopyHeight=lm.fit$canopyHeight.lm,
+                  sc.df=lm.mnsd)
                 )
   out <- map(1:2, ~simulatePopulation(par_i, lmType=lmType, ndraws=20))
   list(out=imap_dfr(out, 
                     ~tibble(sim=.y, 
                             year=rep(1:par_i$tmax, 3),
                             month=rep(c(1,6,7), each=par_i$tmax),
-                            date=ymd(paste0(year, "-", month, "-01")),
-                            PAR_depth=.x$PAR,
+                            date=ymd(glue("{year}-{month}-01")),
+                            PAR_atDepth=rep(.x$PAR, 3),
+                            K_N=rep(.x$K_N, 3),
+                            K_FAI=rep(.x$K_FAI, 3),
                             FAI=c(.x$FAI[3,,]),
                             N.recruits=c(.x$N[1,,]),
                             N.subcanopy=c(.x$N[2,,]),
@@ -143,29 +167,33 @@ out.ls <- foreach(i=1:nrow(grid.i),
                       pivot_longer(contains("N."), names_to="stage", values_to="N") %>%
                       mutate(stage=factor(str_sub(stage, 3, -1), 
                                           levels=c("canopy", "subcanopy", "recruits")))) %>%
-         add_column(par_i$env) %>%
+         mutate(id=i) %>%
+         left_join(., par_i$env) %>%
          mutate(depth=par_i$depth),
        harvest=imap_dfr(out,
                         ~tibble(sim=.y,
                                 year=1:par_i$tmax,
-                                date=ymd(paste0(2000+year, "-06-01")),
-                                PAR_depth=.x$PAR,
+                                date=ymd(glue("{2000+year}-06-01")),
+                                PAR_atDepth=.x$PAR,
                                 FAI.June=c(.x$FAI[3,,2]),
                                 N.recruits.June=c(.x$N[1,,2]),
                                 N.subcanopy.June=c(.x$N[2,,2]),
                                 N.canopy.June=c(.x$N[3,,2]),
-                                harvest=.x$harvest/1e3) %>%
+                                harvest=.x$harvest) %>%
                           mutate(cumulHarvest=cumsum(harvest))) %>%
-         add_column(par_i$env) %>%
+         mutate(id=i) %>%
+         left_join(., par_i$env) %>%
          mutate(depth=par_i$depth),
        biomass=imap_dfr(out,
                         ~tibble(sim=.y,
                                 year=rep(1:par_i$tmax, 3),
                             month=rep(c(1,6,7), each=par_i$tmax),
-                            date=ymd(paste0(year, "-", month, "-01")),
-                            PAR_depth=.x$PAR,
+                            date=ymd(glue("{year}-{month}-01")),
+                            PAR_atDepth=rep(.x$PAR, 3),
+                            FAI=c(.x$FAI[3,,]),
                             biomass=c(.x$biomass))) %>%
-         add_column(par_i$env) %>%
+         mutate(id=i) %>%
+         left_join(., par_i$env) %>%
          mutate(depth=par_i$depth))
 }
 toc()
@@ -176,7 +204,7 @@ stopCluster(cl)
 # Summarize
 
 ```{r summarise_output}
-out.df <- do.call(rbind, map(out.ls, ~.x$out))
+out.df <- do.call(rbind, imap(out.ls, ~.x$out %>% mutate(id=.y)))
 out.sum <- out.df %>% group_by(id, year, month, date, stage) %>%
   select(!c(sim)) %>%
   summarise(#N_q10=quantile(N, 0.1),
@@ -185,117 +213,132 @@ out.sum <- out.df %>% group_by(id, year, month, date, stage) %>%
             # FAI_q90=quantile(FAI, 0.9),
             across(everything(), mean)) %>%
   ungroup
-out.sum.sf <- full_join(grid.domain %>% select(id), out.sum, by="id")
+out.sum.sf <- full_join(grid.sf %>% select(id), out.sum, by="id")
 
-harvest.df <- do.call(rbind, map(out.ls, ~.x$harvest))
+harvest.df <- do.call(rbind, imap(out.ls, ~.x$harvest %>% mutate(id=.y)))
 harvest.sum <- harvest.df %>% group_by(id, year, date) %>%
   select(!c(sim)) %>%
   summarise(#cumulHarvest_q10=quantile(cumulHarvest, 0.1),
             # cumulHarvest_q90=quantile(cumulHarvest, 0.9),
             across(everything(), mean)) %>%
   ungroup
-harvest.sum.sf <- full_join(grid.domain %>% select(id), harvest.sum, by="id")
+harvest.sum.sf <- full_join(grid.sf %>% select(id), harvest.sum, by="id")
 
-mass.df <- do.call(rbind, map(out.ls, ~.x$biomass))
+mass.df <- do.call(rbind, imap(out.ls, ~.x$biomass %>% mutate(id=.y)))
 mass.sum <- mass.df %>% group_by(id, year, month, date) %>%
   select(!c(sim)) %>%
   summarise(#biomass_q10=quantile(biomass, 0.1),
             # biomass_q90=quantile(biomass, 0.9),
             across(everything(), mean)) %>%
   ungroup
-mass.sum.sf <- full_join(grid.domain %>% select(id), mass.sum, by="id")
+mass.sum.sf <- full_join(grid.sf %>% select(id), mass.sum, by="id")
 ```
 
 
 # Plots
 
 ```{r plot_output}
-sample_pops <- sample(1:nrow(grid.i), 10)
-out.sum %>% filter(month==6 & stage=="canopy") %>%
-  filter(id %in% sample_pops) %>% 
-  mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(year, FAI, group=id,
-             colour=PAR_depth, fill=PAR_depth)) +
-  geom_line(size=1) + 
-  scale_colour_viridis_c() + scale_fill_viridis_c() +
-  ylim(0, NA) + facet_wrap(~fetchCat) +
-  ggtitle(paste0("FAI dynamics (", params$depth, "m)"))
-out.sum %>% filter(month==6 & stage=="canopy") %>%
-  filter(id %in% sample_pops) %>%
-  mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(year, FAI/K_FAI, group=id,
-             colour=PAR_depth, fill=PAR_depth)) +
-  geom_line(size=1) + 
-  scale_colour_viridis_c() + scale_fill_viridis_c() +
-  ylim(0, NA) + facet_wrap(~fetchCat) +
-  ggtitle(paste0("kappa_FAI dynamics (", params$depth, "m)"))
-
-out.sum %>% filter(month==6) %>% 
-  filter(id %in% sample_pops) %>%
-  mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(year, N, group=id,
-             colour=PAR_depth, fill=PAR_depth)) +
-  geom_line(size=1) + 
-  scale_colour_viridis_c() + scale_fill_viridis_c() +
-  ylim(0, NA) + facet_grid(stage~fetchCat, scales="free_y") +
-  ggtitle(paste0("Abundance dynamics (", params$depth, "m)"))
-
-out.sum %>% filter(month==1 & stage=="canopy") %>%
-  filter(id %in% sample_pops) %>%
-  mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(date, FAI/N, group=id,
-             colour=PAR_depth, fill=PAR_depth)) +
-  geom_line(size=1) + 
-  geom_hline(aes(yintercept=K_FAI/K_N, colour=PAR_depth)) +
-  scale_colour_viridis_c() + scale_fill_viridis_c() +
-  ylim(0, NA) + facet_wrap(~fetchCat) +
-  ggtitle(paste0("FAI/indiv dynamics (", params$depth, "m)"))
-
-mass.sum %>% filter(month==6) %>%
-  filter(id %in% sample_pops) %>%
-  mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(year, biomass, group=id,
-             colour=PAR_depth, fill=PAR_depth)) +
-  geom_line(size=1) + 
-  scale_colour_viridis_c() + scale_fill_viridis_c() +
-  ylim(0, NA) + facet_wrap(~fetchCat) +
-  ggtitle(paste0("Biomass dynamics (", params$depth, "m)"))
-
-mass.sum %>% 
-  mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
-  ggplot(aes(biomass, FAI, colour=PAR_depth)) + geom_point(shape=1) +
-  scale_colour_viridis_c() + facet_grid(month~fetchCat)
+# sample_pops <- sample(1:nrow(grid.i), 25)
+# out.sum %>% filter(month==6 & stage=="canopy") %>%
+#   filter(id %in% sample_pops) %>% 
+#   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
+#   ggplot(aes(year, FAI, group=id,
+#              colour=PAR_atDepth, fill=PAR_atDepth)) +
+#   geom_line(size=1, alpha=0.8) + 
+#   scale_colour_viridis_c() + scale_fill_viridis_c() +
+#   ylim(0, NA) + facet_wrap(~fetchCat) +
+#   ggtitle(glue("FAI dynamics ({params$depth}m)"))
+# out.sum %>% filter(month==6 & stage=="canopy") %>%
+#   filter(id %in% sample_pops) %>%
+#   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
+#   ggplot(aes(year, FAI/K_FAI, group=id,
+#              colour=PAR_atDepth, fill=PAR_atDepth)) +
+#   geom_line(size=1) + 
+#   scale_colour_viridis_c() + scale_fill_viridis_c() +
+#   ylim(0, NA) + facet_wrap(~fetchCat) +
+#   ggtitle(glue("kappa_FAI dynamics ({params$depth}m)"))
+# 
+# out.sum %>% filter(month==6) %>% 
+#   filter(id %in% sample_pops) %>%
+#   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
+#   ggplot(aes(year, N, group=id,
+#              colour=PAR_atDepth, fill=PAR_atDepth)) +
+#   geom_line(size=1) + 
+#   scale_colour_viridis_c() + scale_fill_viridis_c() +
+#   ylim(0, NA) + facet_grid(stage~fetchCat, scales="free_y") +
+#   ggtitle(glue("Abundance dynamics ({params$depth}m)"))
+# out.sum %>% filter(month==6) %>% 
+#   filter(id %in% sample_pops & stage=="canopy") %>%
+#   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
+#   ggplot(aes(year, N/K_N, group=id,
+#              colour=PAR_atDepth, fill=PAR_atDepth)) +
+#   geom_line(size=1) + 
+#   scale_colour_viridis_c() + scale_fill_viridis_c() +
+#   ylim(0, NA) + facet_wrap(~fetchCat) +
+#   ggtitle(glue("kappa_N dynamics ({params$depth}m)"))
+# 
+# out.sum %>% filter(month==1 & stage=="canopy") %>%
+#   filter(id %in% sample_pops) %>%
+#   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
+#   ggplot(aes(date, FAI/N, group=id,
+#              colour=PAR_atDepth, fill=PAR_atDepth)) +
+#   geom_line(size=1) + 
+#   geom_hline(aes(yintercept=K_FAI/K_N, colour=PAR_atDepth)) +
+#   scale_colour_viridis_c() + scale_fill_viridis_c() +
+#   ylim(0, 1) + facet_wrap(~fetchCat) +
+#   ggtitle(glue("FAI/indiv dynamics ({params$depth}m)"))
+# 
+# mass.sum %>% filter(month==6) %>%
+#   filter(id %in% sample_pops) %>%
+#   mutate(fetchCat=paste("Exposure level:", fetchCat)) %>%
+#   ggplot(aes(year, biomass, group=id,
+#              colour=PAR_atDepth, fill=PAR_atDepth)) +
+#   geom_line(size=1) + 
+#   scale_colour_viridis_c() + scale_fill_viridis_c() +
+#   ylim(0, NA) + facet_wrap(~fetchCat) +
+#   ggtitle(glue("Biomass dynamics ({params$depth}m)"))
+# 
+# 
 
 
 out.summary.sf <- out.sum.sf %>% 
-  filter(month==6 & stage=="canopy") %>%
+  filter(month==6 & stage=="canopy" & year > 10) %>%
   group_by(id) %>%
-  summarise(FAI=mean(FAI),
-            N=mean(N))
+  summarise(FAI=median(FAI),
+            N=median(N))
 out.summary.sf %>%
   ggplot(aes(fill=FAI)) + 
-  geom_sf(colour=NA) + scale_fill_viridis_c() +
-  ggtitle(paste0("Mean 1 July FAI (", params$depth, "m)")) +
+  geom_sf(colour=NA) + scale_fill_viridis_c(limits=c(0,NA)) +
+  ggtitle(glue("Median 1 July FAI ({params$depth}m)")) +
   theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
+ggsave(glue("figs\\median_FAI_{params$depth}m.png"), height=7, width=6)
 out.summary.sf %>%
   ggplot(aes(fill=N)) + 
-  geom_sf(colour=NA) + scale_fill_viridis_c() +
-  ggtitle(paste0("Mean 1 July canopy density (", params$depth, "m)")) +
+  geom_sf(colour=NA) + scale_fill_viridis_c(limits=c(0,NA)) +
+  ggtitle(glue("Median 1 July canopy density ({params$depth}m)")) +
   theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
+ggsave(glue("figs\\median_N_{params$depth}m.png"), height=7, width=6)
+out.summary.sf %>%
+  ggplot(aes(fill=N>1)) + 
+  geom_sf(colour=NA) + scale_fill_manual(values=c("grey", "green4")) +
+  ggtitle(glue("Median 1 July canopy presence ({params$depth}m)")) +
+  theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
+ggsave(glue("figs\\median_N_{params$depth}m.png"), height=7, width=6)
 mass.sum.sf %>% 
-  filter(month==6) %>%
+  filter(month==6 & year > 10) %>%
   group_by(id) %>%
-  summarise(biomass=mean(biomass)/1e3) %>%
+  summarise(biomass=median(biomass)) %>%
   ggplot(aes(fill=biomass)) + 
   geom_sf(colour=NA) + scale_fill_viridis_c() +
-  ggtitle(paste0("Mean 1 July biomass (", params$depth, "m)")) +
+  ggtitle(glue("Median 1 July biomass ({params$depth}m)")) +
   theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
-harvest.sum.sf %>%
-  filter(year==max(year)) %>%
-  ggplot(aes(fill=cumulHarvest)) + 
-  geom_sf(colour=NA) + scale_fill_viridis_c(paste(params$harvestTarget, "(kg)")) +
-  ggtitle(paste0("Total harvest (", params$tmax, " yrs, ", params$depth, "m)")) +
-  theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
+ggsave(glue("figs\\median_biomass_{params$depth}m.png"), height=7, width=6)
+# harvest.sum.sf %>%
+#   filter(year==max(year)) %>%
+#   ggplot(aes(fill=cumulHarvest)) + 
+#   geom_sf(colour=NA) + scale_fill_viridis_c(paste(params$harvestTarget, "(kg)")) +
+#   ggtitle(glue("Total harvest ({params$tmax} yrs, {params$depth}m)")) +
+#   theme(axis.text=element_blank(), axis.ticks=element_blank(), legend.position="bottom")
 
 
 
@@ -306,135 +349,201 @@ library(gganimate)
 anim <- out.sum.sf %>% filter(stage=="canopy") %>%
   filter(month==6) %>% filter(year>10) %>%
   ggplot() + geom_sf(aes(fill=N), colour=NA) + 
-  transition_time(year) + ease_aes('cubic-in-out') +
+  transition_states(year) + ease_aes('cubic-in-out') +
   ggtitle(paste0("July canopy abundance at ", 
-                 params$depth, "m: Year {frame_time}")) +
+                 params$depth, "m: Year {closest_state}")) +
   scale_fill_viridis_c() + theme(axis.text=element_blank())
-anim_save(paste0("figs\\canopy_N_", params$depth, "m.gif"), 
-          anim, nframes=params$tmax)
+anim_save(glue("figs\\canopy_N_{params$depth}m.gif"), 
+          anim, nframes=params$tmax-10)
 
 anim <- out.sum.sf %>% filter(stage=="canopy") %>%
   filter(month==6) %>% filter(year>10) %>%
   ggplot() + geom_sf(aes(fill=FAI), colour=NA) + 
-  transition_time(year) + ease_aes('cubic-in-out') +
-  ggtitle(paste0("July FAI at ", 
-                 params$depth, "m: Year {frame_time}")) +
+  transition_states(year) + ease_aes('cubic-in-out') +
+  ggtitle(paste0("July FAI abundance at ", 
+                 params$depth, "m: Year {closest_state}")) +
   scale_fill_viridis_c() + theme(axis.text=element_blank())
-anim_save(paste0("figs\\canopy_FAI_", params$depth, "m.gif"), 
-          anim, nframes=params$tmax)
+anim_save(glue("figs\\canopy_FAI_{params$depth}m.gif"), 
+          anim, nframes=params$tmax-10)
 
 anim <- mass.sum.sf %>% 
   filter(month==6) %>% filter(year>10) %>%
-  ggplot() + geom_sf(aes(fill=biomass/1e3), colour=NA) + 
-  transition_time(year) + ease_aes('cubic-in-out') +
+  ggplot() + geom_sf(aes(fill=biomass), colour=NA) + 
+  transition_states(year) + ease_aes('cubic-in-out') +
   ggtitle(paste0("July biomass at ", 
-                 params$depth, "m: Year {frame_time}")) +
+                 params$depth, "m: Year {closest_state}")) +
   scale_fill_viridis_c("Biomass\nkg/m2") + theme(axis.text=element_blank())
-anim_save(paste0("figs\\biomass_", params$depth, ".gif"),
-          anim, nframes=params$tmax)
+anim_save(glue("figs\\biomass_{params$depth}m.gif"),
+          anim, nframes=params$tmax-10)
+
+anim <- out.sum.sf %>% filter(stage=="canopy") %>%
+  filter(month==6) %>% filter(year>10) %>%
+  ggplot() + geom_sf(aes(fill=SST), colour=NA) + 
+  transition_states(year) + ease_aes('cubic-in-out') +
+  ggtitle(paste0("Mean SST (Jan-Jun): Year {closest_state}")) +
+  scale_fill_viridis_c() + theme(axis.text=element_blank())
+anim_save(glue("figs\\SST.gif"), 
+          anim, nframes=params$tmax-10)
+
+anim <- out.sum.sf %>% filter(stage=="canopy") %>%
+  filter(month==6) %>% filter(year>10) %>%
+  ggplot() + geom_sf(aes(fill=PAR_atDepth), colour=NA) + 
+  transition_states(year) + ease_aes('cubic-in-out') +
+  ggtitle(paste0("Mean PAR (Jan-Jun) at ", 
+                 params$depth, "m: Year {closest_state}")) +
+  scale_fill_viridis_c() + theme(axis.text=element_blank())
+anim_save(glue("figs\\PAR_{params$depth}m.gif"), 
+          anim, nframes=params$tmax-10)
 ```
 
 
 
+# Constants
+
 ```{r K_predictions}
-grid.domain <- grid.domain %>%
+grid.sf <- grid.sf %>%
   mutate(canopyHeight=getPrediction(lm.fit$canopyHeight.lm, lmType, 5, 
-                                    tibble(sstDay_mn=sstDay_mn)),
+                                    tibble(sstDay_mn=sstDay_mn), 
+                                    lm.mnsd$canopyHeight.lm, "maxStipeLen"),
          K_N_2=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
                              tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 2),
                                     sstDay_mn=sstDay_mn,
-                                    fetch=fetch)),
+                                    fetch=fetch, 
+                                    location=NA),
+                             lm.mnsd$N_canopy.lm, "N"),
          K_N_5=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
                              tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 5),
                                     sstDay_mn=sstDay_mn,
-                                    fetch=fetch)),
+                                    fetch=fetch, 
+                                    location=NA),
+                             lm.mnsd$N_canopy.lm, "N"),
          K_N_10=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
-                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 10),
-                                    sstDay_mn=sstDay_mn,
-                                    fetch=fetch)),
+                              tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 10),
+                                     sstDay_mn=sstDay_mn,
+                                     fetch=fetch, 
+                                     location=NA),
+                              lm.mnsd$N_canopy.lm, "N"),
          K_N_15=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
-                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 15),
-                                    sstDay_mn=sstDay_mn,
-                                    fetch=fetch)),
+                              tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 15),
+                                     sstDay_mn=sstDay_mn,
+                                     fetch=fetch, 
+                                     location=NA),
+                              lm.mnsd$N_canopy.lm, "N"),
          K_N_20=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
-                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 20),
-                                    sstDay_mn=sstDay_mn,
-                                    fetch=fetch)),
+                              tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 20),
+                                     sstDay_mn=sstDay_mn,
+                                     fetch=fetch, 
+                                     location=NA),
+                              lm.mnsd$N_canopy.lm, "N"),
+         K_N_25=getPrediction(lm.fit$N_canopy.lm, lmType, 5,
+                              tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 25),
+                                     sstDay_mn=sstDay_mn,
+                                     fetch=fetch, 
+                                     location=NA),
+                              lm.mnsd$N_canopy.lm, "N"),
          K_FAI_2=getPrediction(lm.fit$FAI.lm, lmType, 5,
-                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 2),
-                                    fetch=fetch)),
+                               tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 2),
+                                      fetch=fetch,
+                                      sstDay_mn=sstDay_mn),
+                               lm.mnsd$FAI.lm, "FAI"),
          K_FAI_5=getPrediction(lm.fit$FAI.lm, lmType, 5,
-                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 5),
-                                    fetch=fetch)),
+                               tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 5),
+                                      fetch=fetch,
+                                      sstDay_mn=sstDay_mn),
+                               lm.mnsd$FAI.lm, "FAI"),
          K_FAI_10=getPrediction(lm.fit$FAI.lm, lmType, 5,
-                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 10),
-                                    fetch=fetch)),
+                                tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 10),
+                                       fetch=fetch,
+                                       sstDay_mn=sstDay_mn),
+                                lm.mnsd$FAI.lm, "FAI"),
          K_FAI_15=getPrediction(lm.fit$FAI.lm, lmType, 5,
-                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 15),
-                                    fetch=fetch)),
+                                tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 15),
+                                       fetch=fetch,
+                                       sstDay_mn=sstDay_mn),
+                                lm.mnsd$FAI.lm, "FAI"),
          K_FAI_20=getPrediction(lm.fit$FAI.lm, lmType, 5,
-                             tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 20),
-                                    fetch=fetch)))
+                                tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 20),
+                                       fetch=fetch,
+                                       sstDay_mn=sstDay_mn),
+                                lm.mnsd$FAI.lm, "FAI"),
+         K_FAI_25=getPrediction(lm.fit$FAI.lm, lmType, 5,
+                                tibble(PAR_atDepth=PAR_surface * exp(-KD_mn * 25),
+                                       fetch=fetch,
+                                       sstDay_mn=sstDay_mn),
+                                lm.mnsd$FAI.lm, "FAI"))
 
 
-ggplot(grid.domain) + geom_sf(colour=NA, aes(fill=canopyHeight)) +
-  scale_fill_viridis_c("Canopy height\n(mm)")
+ggplot(grid.sf) + geom_sf(colour=NA, aes(fill=canopyHeight/10)) +
+  scale_fill_viridis_c("Canopy height\n(cm)", limits=c(0, 210))
 
-grid.domain %>% 
+grid.sf %>% 
   pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
   ggplot(aes(fill=K_N)) + geom_sf(colour=NA) +
   scale_fill_viridis_c(expression(K[N])) + facet_grid(.~depth)
 
-grid.domain %>% 
+grid.sf %>% 
   pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
   ggplot(aes(fill=K_N>1)) + geom_sf(colour=NA) +
   facet_grid(.~depth)
 
-grid.domain %>% 
+grid.sf %>% 
   pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
   ggplot(aes(fill=K_FAI)) + geom_sf(colour=NA) +
   scale_fill_viridis_c(expression(K[FAI])) + facet_grid(.~depth)
 
-grid.domain %>% 
+grid.sf %>% 
   pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
   ggplot(aes(fill=K_FAI>0)) + geom_sf(colour=NA) +
   facet_grid(.~depth)
 
 
-grid.domain %>% 
+grid.sf %>% 
   pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
   ggplot(aes(PAR_surface, K_N, colour=depth, group=depth)) + 
-  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) +
+  scale_colour_viridis_c(direction=-1)
 
-grid.domain %>% 
+grid.sf %>% 
   pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
   ggplot(aes(sstDay_mn, K_N, colour=depth, group=depth)) + 
-  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) +
+  scale_colour_viridis_c(direction=-1)
 
-grid.domain %>% 
+grid.sf %>% 
+  pivot_longer(starts_with("K_N_"), names_to="depth", values_to="K_N") %>%
+  mutate(depth=as.numeric(str_remove(depth, "K_N_"))) %>%
+  ggplot(aes(fetch, K_N, colour=depth, group=depth)) + 
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) +
+  scale_colour_viridis_c(direction=-1)
+
+grid.sf %>% 
   pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
   ggplot(aes(PAR_surface, K_FAI, colour=depth, group=depth)) + 
-  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) +
+  scale_colour_viridis_c(direction=-1)
 
-grid.domain %>% 
+grid.sf %>% 
   pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
   ggplot(aes(sstDay_mn, K_FAI, colour=depth, group=depth)) + 
-  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) +
+  scale_colour_viridis_c(direction=-1)
 
-grid.domain %>% 
+grid.sf %>% 
   pivot_longer(starts_with("K_FAI_"), names_to="depth", values_to="K_FAI") %>%
   mutate(depth=as.numeric(str_remove(depth, "K_FAI_"))) %>%
   ggplot(aes(fetch, K_FAI, colour=depth, group=depth)) + 
-  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) + scale_colour_viridis_c()
+  geom_point(shape=1, alpha=0.5) + stat_smooth(se=F) +
+  scale_colour_viridis_c(direction=-1)
 
 ```
+
 
 
