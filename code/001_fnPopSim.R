@@ -99,7 +99,7 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
                                                   env_yr),
                                         pars$sc.df$arFr_to_wtFr.lm, "logWtFrond")
     # growth
-    growRate_i <- pars$growthRateStipeMax * (1-max(kappa[year,season,]))^pars$growthRateDensityShape
+    growRate_i <- pars$growthRateStipeMax * (1-max(kappa[year,season,1]))^pars$growthRateDensityShape
     prGrowToNext <- growRate_i/(sizeClassLimits-lag(sizeClassLimits))[-1]
     A[[1]][2,1] <- pars$survRate[1]*prGrowToNext[1]
     A[[1]][3,2] <- pars$survRate[2]*prGrowToNext[2]
