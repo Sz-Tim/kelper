@@ -533,4 +533,79 @@ getPrediction <- function(mod, lmType, ndraws, new.df, scale.df, y_var) {
 
 
 
+runSimsInParallel <- function(x, grid.i, grid.sim=NULL, 
+                              depths, tmax, nSim, lmType, gridRes, dynamicLandscape, 
+                              surv.df, fecund.df, 
+                              lm.fit, lm.mnsd) {
+  library(glue); library(lubridate); library(sf); library(brms); 
+  library(lme4); library(glmmTMB); library(tidyverse)
+  if(dynamicLandscape) {
+    cell.env <- grid.sim %>% st_drop_geometry() %>% filter(id==grid.i$id[x])
+  } else {
+    cell.env <- grid.i[x,]
+  }
+  pop.ls <- mass.ls <- vector("list", length(depths))
+  for(j in 1:length(depths)) {
+    par_i <- setParameters(
+      tmax=tmax, 
+      survRate=filter(surv.df, exposure==cell.env$fetchCat[1])$survRate^(1/2),
+      settlementRateBg=filter(fecund.df, exposure==cell.env$fetchCat[1])$rate,
+      extraPars=list(
+        depth=depths[j],
+        env=cell.env,
+        lenSt_to_wtSt=lm.fit$lenSt_to_wtSt.lm,
+        lenSt_to_wtFr=lm.fit$lenSt_to_wtFr.lm,
+        wtFr_to_arFr=lm.fit$wtFr_to_arFr.lm,
+        arFr_to_wtFr=lm.fit$arFr_to_wtFr.lm,
+        N_canopy=lm.fit$N_canopy.lm,
+        FAI=lm.fit$FAI.lm,
+        canopyHeight=lm.fit$canopyHeight.lm,
+        sc.df=lm.mnsd)
+    )
+    out <- map(1:nSim, ~simulatePopulation(par_i, lmType=lmType, ndraws=50))
+    pop.ls[[j]] <- imap_dfr(out, 
+                            ~tibble(sim=.y, 
+                                    year=rep(1:par_i$tmax, 3),
+                                    month=rep(c(1,6,7), each=par_i$tmax),
+                                    date=ymd(glue("{year}-{month}-01")),
+                                    PAR_atDepth=rep(.x$PAR, 3),
+                                    K_N=rep(.x$K_N, 3),
+                                    K_FAI=rep(.x$K_FAI, 3),
+                                    FAI=c(.x$FAI[3,,]),
+                                    N.recruits=c(.x$N[1,,]),
+                                    N.subcanopy=c(.x$N[2,,]),
+                                    N.canopy=c(.x$N[3,,]),
+                                    kappa_FAI=c(.x$kappa[,,1]),
+                                    kappa_N=c(.x$kappa[,,2])) %>%
+                              pivot_longer(contains("N."), names_to="stage", values_to="N") %>%
+                              mutate(stage=factor(str_sub(stage, 3, -1), 
+                                                  levels=c("canopy", "subcanopy", "recruits")))) %>%
+      mutate(id=x) %>%
+      left_join(., par_i$env) %>%
+      mutate(depth=par_i$depth,
+             landscape=ifelse(dynamicLandscape,'dynamic','static'),
+             lmType=lmType)
+    mass.ls[[j]] <- imap_dfr(out,
+                             ~tibble(sim=.y,
+                                     year=rep(1:par_i$tmax, 3),
+                                     month=rep(c(1,6,7), each=par_i$tmax),
+                                     date=ymd(glue("{year}-{month}-01")),
+                                     PAR_atDepth=rep(.x$PAR, 3),
+                                     FAI=c(.x$FAI[3,,]),
+                                     biomass=c(.x$biomass),
+                                     kappa_FAI=c(.x$kappa[,,1]),
+                                     kappa_N=c(.x$kappa[,,2]))) %>%
+      mutate(id=x) %>%
+      left_join(., par_i$env) %>%
+      mutate(depth=par_i$depth,
+             landscape=ifelse(dynamicLandscape,'dynamic','static'),
+             lmType=lmType)
+  }
+  sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{lmType}",
+                   "_{ifelse(dynamicLandscape,'dynamic','static')}")
+  saveRDS(do.call(rbind, pop.ls), glue("out\\pop_{sim.info}.rds"))
+  saveRDS(do.call(rbind, mass.ls), glue("out\\mass_{sim.info}.rds"))
+  return(x)
+}
+
 
