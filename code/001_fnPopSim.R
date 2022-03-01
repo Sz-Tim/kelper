@@ -16,7 +16,7 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   ## K_FAI = carrying capacity on frond area / m2
   dynamicLandscape <- nrow(pars$env) == pars$tmax
   env_yr <- tibble(PAR_atDepth=pars$env$PAR[1] * exp(-pars$env$KD[1] * pars$depth),
-                  sstDay_mn=pars$env$SST[1],
+                  SST=pars$env$SST[1],
                   fetch=pars$env$fetch[1],
                   location=NA)
   maxStipeLen <- getPrediction(pars$canopyHeight, lmType, ndraws, env_yr,
@@ -24,9 +24,9 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
   sizeClassLimits <- maxStipeLen * (0:3)/3
   sizeClassMdpts <- (sizeClassLimits+lag(sizeClassLimits))[-1]/2
   K_N <- K_FAI <- rep(0, pars$tmax) 
-  K_N[] <- max(0, getPrediction(pars$N_canopy, lmType, ndraws, env_yr,
+  K_N[] <- max(1e-2, getPrediction(pars$N_canopy, lmType, ndraws, env_yr,
                                 pars$sc.df$N_canopy.lm, "N"))
-  K_FAI[] <- max(0, getPrediction(pars$FAI, lmType, ndraws, env_yr,
+  K_FAI[] <- max(1e-2, getPrediction(pars$FAI, lmType, ndraws, env_yr,
                                   pars$sc.df$FAI.lm, "FAI"))
   if(is.null(N0)) N0 <- K_N[1] * c(10,1,1)# * runif(3)
   
@@ -70,7 +70,7 @@ simulatePopulation <- function(pars, N0=NULL, lmType="brms", ndraws=5) {
     harvestYear <- year %% pars$freqHarvest == 0
     if(dynamicLandscape & year > 1) {
       env_yr <- tibble(PAR_atDepth=pars$env$PAR[year] * exp(-pars$env$KD[year] * pars$depth),
-                       sstDay_mn=pars$env$SST[year],
+                       SST=pars$env$SST[year],
                        fetch=pars$env$fetch[year],
                        location=NA)
       K_N[year] <- max(0, getPrediction(pars$N_canopy, lmType, ndraws, env_yr,
