@@ -129,15 +129,21 @@ growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, par
 
 
 
-
-
-
-calcBiomass <- function(N_t, lwtStipe=NULL, lmFit=NULL, lmType=NULL, 
-                        ndraws=NULL, new.df=NULL, scale.df=NULL, y_var=NULL) {
-  stipeMass <- N_t * exp(lwtStipe)
-  frondMass <- N_t * exp(getPrediction(lmFit, lmType, ndraws, 
-                                       new.df, scale.df, y_var))
-  return(sum(stipeMass, frondMass, na.rm=T)/1e3)
+calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df) {
+  stipeMass <- frondMass <- array(0, dim=dim(N))
+  for(stage in 1:3) {
+    for(season in 1:(dim(N)[3])) {
+      frondMass[stage,,season] <- N[stage,,season] * 
+        exp(getPrediction(lmFit, ndraws, 
+                          bind_cols(logAreaFrond=log(FAI[stage,,season]/N[stage,,season]), env.df),
+                          scale.df, "logWtFrond"))
+    }
+  }
+  for(year in 1:(dim(N)[2])) {
+    stipeMass[,year,] <- N[,year,] * exp(lwtStipe[year,])
+    
+  }
+  return(apply((stipeMass + frondMass), 2:3, sum)/1e3)
 }
 
 
