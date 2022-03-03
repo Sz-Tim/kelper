@@ -91,27 +91,48 @@ mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
 
 # Abundance by PAR
 pop.sum %>% filter(month==6) %>%
-  ggplot(aes(PAR_atDepth_mn, N_md, colour=fetch_mn)) + geom_point() +
+  ggplot(aes(PAR_atDepth_mn, N_mn, colour=SST_mn)) + geom_point() +
+  geom_point(data=obs.ls$N_canopy.lm %>% group_by(location) %>% 
+               summarise(across(everything(), mean)) %>%
+               mutate(stage="canopy"),
+             aes(PAR_atDepth, N), colour="red", shape=1) +
   facet_grid(stage~landscape, scales="free_y") + 
   scale_colour_viridis_c() +
-  labs(title=sim.title)
+  labs(title=sim.title) 
 pop.sum %>% filter(month==6) %>% 
-  ggplot(aes(fetch_mn, N_md, colour=PAR_atDepth_mn)) + geom_point() +
+  ggplot(aes(fetch_mn, N_mn, colour=PAR_atDepth_mn)) + geom_point() +
+  geom_point(data=obs.ls$N_canopy.lm %>% group_by(location) %>% 
+               summarise(across(everything(), mean)) %>%
+               mutate(stage="canopy"),
+             aes(fetch, N), colour="red", shape=1) +
   facet_grid(stage~landscape, scales="free_y") + 
   scale_colour_viridis_c() +
   labs(title=sim.title)
 pop.sum %>% filter(month==6) %>%
   ggplot(aes(PAR_atDepth_mn, N_max, colour=fetch_mn)) + geom_point() +
+  geom_point(data=obs.ls$N_canopy.lm %>% group_by(location) %>% 
+               summarise(across(everything(), mean)) %>%
+               mutate(stage="canopy"),
+             aes(PAR_atDepth, N), colour="red", shape=1) +
   facet_grid(stage~landscape, scales="free_y") + 
   scale_colour_viridis_c() +
   labs(title=sim.title)
 pop.sum %>% filter(month==6) %>%
   ggplot(aes(PAR_atDepth_mn, N_pOcc, colour=SST_mn)) + geom_point(alpha=0.5) +
+  geom_point(data=obs.ls$N_canopy.lm %>% group_by(PAR_atDepth) %>% 
+               summarise(PAR_atDepth=mean(PAR_atDepth), N_pOcc=sum(N>0)/n()) %>%
+               mutate(stage="canopy"),
+             aes(PAR_atDepth, N_pOcc), colour="red", shape=1) +
   facet_grid(stage~landscape, scales="free_y") + 
   scale_colour_viridis_c() +
   labs(title=sim.title)
 pop.sum %>% filter(month==6) %>%
   ggplot(aes(PAR_atDepth_mn, N_sd, colour=fetch_mn)) + geom_point() +
+  facet_grid(stage~landscape, scales="free_y") + 
+  scale_colour_viridis_c() +
+  labs(title=sim.title)
+pop.sum %>% filter(month==6) %>%
+  ggplot(aes(PAR_atDepth_mn, N_sd/N_mn, colour=fetch_mn)) + geom_point() +
   facet_grid(stage~landscape, scales="free_y") + 
   scale_colour_viridis_c() +
   labs(title=sim.title)
@@ -126,77 +147,92 @@ pop.sum %>% filter(month==6) %>%
   scale_colour_viridis_c() +
   labs(title=sim.title)
 
+pop.sum %>% filter(month==6) %>%
+  ggplot(aes(PAR_atDepth_mn, FAI_max, colour=fetch_mn)) + geom_point() +
+  geom_point(data=obs.ls$FAI.lm,
+             aes(PAR_atDepth, FAI), colour="red", alpha=0.5, shape=1) +
+  facet_grid(.~landscape, scales="free_y") + 
+  scale_colour_viridis_c() +
+  labs(title=sim.title)
+
 
 
 # Abundance maps
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=N_mn)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=N_md)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=N_pOcc)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
-  ggplot(aes(fill=N_mn>1)) + geom_sf(colour=NA) + 
-  facet_grid(lmType~depth)
+  ggplot(aes(fill=N_md>1)) + geom_sf(colour=NA) + 
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=N_sd)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=N_max)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=K_N_mn)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=K_N_mn>1)) + geom_sf(colour=NA) + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=K_N_sd)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=kappa_N_mn)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=kappa_FAI_mn)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=K_FAI_mn)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
+pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
+  ggplot(aes(fill=K_FAI_mn>1)) + geom_sf(colour=NA) + 
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=K_FAI_mn/K_N_mn)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 pop.sum.sf %>% filter(stage=="canopy" & month==6) %>%
   ggplot(aes(fill=kappa_FAI_mn-kappa_N_mn)) + geom_sf(colour=NA) + 
   scale_fill_gradient2() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 
 mass.sum.sf %>% 
   ggplot(aes(fill=biomass_md)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 mass.sum.sf %>% 
   ggplot(aes(fill=biomass_mn)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
 mass.sum.sf %>% 
   ggplot(aes(fill=biomass_sd)) + geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_grid(lmType~depth)
+  facet_grid(landscape~depth)
+mass.sum.sf %>% 
+  ggplot(aes(fill=biomass_sd/biomass_mn)) + geom_sf(colour=NA) + 
+  scale_fill_viridis_c("biomass CV") + 
+  facet_grid(landscape~depth)
 
 
 
@@ -260,30 +296,90 @@ mass.df %>%
 
 
 
-samp_id <- sample(grid.sf$id, 10)
+samp_id <- sample(unique(pop.df$id), 5)
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>%
-  ggplot(aes(date, kappa_N, group=id, colour=depth)) + geom_line() +
-  facet_grid(stage~depth, scales="free_y") + ylim(0, 1)
+pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>% filter(stage=="canopy") %>%
+  ggplot(aes(year, kappa_N, group=landscape, colour=landscape)) + geom_line() +
+  facet_grid(id~depth) + ylim(0, 1)
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>%
-  ggplot(aes(date, kappa_FAI, group=id, colour=depth)) + geom_line() +
-  facet_grid(stage~depth, scales="free_y") + ylim(0, 1)
+pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>% filter(stage=="canopy") %>%
+  ggplot(aes(year, kappa_FAI, group=landscape, colour=landscape)) + geom_line() +
+  facet_grid(id~depth) + ylim(0, 1) 
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>%
+pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>% filter(stage=="canopy") %>%
   mutate(kappa=pmax(kappa_N, kappa_FAI)) %>%
-  ggplot(aes(date, kappa, group=id, colour=depth)) + geom_line() +
-  facet_grid(stage~depth, scales="free_y") + ylim(0, 1)
+  ggplot(aes(year, kappa, group=landscape, colour=landscape)) + geom_line() +
+  facet_grid(id~depth) + ylim(0, 1)
 
 pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>%
-  ggplot(aes(date, N, group=id, colour=depth)) + geom_line() +
-  facet_grid(stage~depth, scales="free_y")
+  ggplot(aes(year, N, group=paste(landscape, depth), colour=depth, linetype=landscape)) + geom_line() +
+  facet_grid(stage~id, scales="free_y") 
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>%
-  ggplot(aes(date, FAI, group=id, colour=depth)) + geom_line() +
-  facet_grid(stage~depth, scales="free_y")
+pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>% filter(stage=="canopy") %>%
+  ggplot(aes(year, N, group=landscape, colour=landscape)) + geom_line() +
+  facet_grid(id~depth, scales="free_y")
+
+pop.df %>% filter(id %in% samp_id) %>% filter(month==6) %>% filter(stage=="canopy") %>%
+  ggplot(aes(year, FAI, group=landscape, colour=landscape)) + geom_line() +
+  facet_grid(id~depth, scales="free_y")
 
 mass.df %>% filter(id %in% samp_id) %>% filter(month==6) %>%
-  ggplot(aes(date, biomass, group=id, colour=depth)) + geom_line() +
-  facet_grid(.~depth, scales="free_y")
+  ggplot(aes(year, biomass, group=landscape, colour=landscape)) + geom_line() +
+  facet_grid(id~depth, scales="free_y")
 
+
+
+
+pop.df %>% filter(stage=="canopy") %>%
+  filter(month==1) %>% filter(year>50) %>%
+  group_by(id, depth, landscape, sim) %>%
+  mutate(lambda=N/lag(N, 1)) %>%
+  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
+  ggplot(aes(mnLogLambda, colour=depth, group=depth)) + geom_density() + 
+  scale_colour_viridis_c() + 
+  facet_wrap(~landscape, scales="free")
+
+pop.df %>% filter(stage=="canopy") %>%
+  filter(month==1) %>% filter(year>50) %>%
+  group_by(id, depth, landscape) %>%
+  mutate(lambda=N/lag(N, 1)) %>%
+  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
+  full_join(grid.sf, .) %>%
+  ggplot(aes(fill=sign(mnLogLambda) * (abs(mnLogLambda) > 0.05))) + geom_sf(colour=NA) +
+  scale_fill_gradient2(low="red", high="blue", mid="grey70") +
+  facet_grid(landscape~depth)
+pop.df %>% filter(stage=="canopy") %>%
+  filter(month==1) %>% filter(year>50) %>%
+  group_by(id, depth, landscape) %>%
+  mutate(lambda=N/lag(N, 1)) %>%
+  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
+  full_join(grid.sf, .) %>%
+  ggplot(aes(fill=mnLogLambda > -0.05)) + geom_sf(colour=NA) +
+  facet_grid(landscape~depth)
+pop.df %>% filter(stage=="canopy") %>%
+  filter(month==1) %>% filter(year>50) %>%
+  group_by(id, depth, landscape) %>%
+  mutate(lambda=N/lag(N, 1)) %>%
+  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
+  full_join(grid.sf, .) %>%
+  ggplot(aes(fill=mnLogLambda>0)) + geom_sf(colour=NA) +
+  facet_grid(landscape~depth)
+
+pop.df %>% filter(stage=="canopy") %>%
+  filter(month==1) %>% filter(year>50) %>%
+  group_by(id, depth, landscape) %>%
+  mutate(lambda=N/lag(N, 1)) %>%
+  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
+  full_join(grid.sf, .) %>%
+  ggplot(aes(fill=mnLogLambda)) + geom_sf(colour=NA) +
+  scale_fill_gradient2() +
+  facet_grid(landscape~depth)
+pop.df %>% filter(stage=="canopy") %>%
+  filter(month==1) %>% filter(year>50) %>%
+  group_by(id, depth, landscape) %>%
+  mutate(lambda=N/lag(N, 1)) %>%
+  summarise(sdLogLambda=sd(log(lambda), na.rm=T)) %>%
+  full_join(grid.sf, .) %>%
+  ggplot(aes(fill=sdLogLambda)) + geom_sf(colour=NA) +
+  scale_fill_viridis_c() +
+  facet_grid(landscape~depth)
