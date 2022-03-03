@@ -22,7 +22,7 @@ data.dir <- "..\\data\\digitized\\"
 supp.f <- "..\\data\\collab\\collab_all.xlsx"
 
 # switches & settings
-gridRes <- 0.5
+gridRes <- 0.1
 
 # load files
 grid.sf <- st_read(glue("data\\grid_{gridRes}_MODIS.gpkg")) %>%
@@ -32,7 +32,7 @@ pop.f <- dir(out.dir, glue("pop_{sim.info}"), full.names=T)
 pop.df <- map_dfr(pop.f, readRDS)
 mass.f <- dir(out.dir, glue("mass_{sim.info}"), full.names=T)
 mass.df <- map_dfr(mass.f, readRDS)
-obs.ls <- readRDS("data\\dfs_{gridRes}_MODIS.rds")
+obs.ls <- readRDS(glue("data\\dfs_{gridRes}_MODIS.rds"))
 
 y_vars <- c("FAI", "N", "biomass", "logN", "logBiomass", "kappa_N", "kappa_FAI")
 x_vars <- c("K_N", "K_FAI", "SST", "KD", "PAR", "PAR_atDepth", "fetch", "fetchCat")
@@ -41,7 +41,7 @@ pop.sum <- pop.df %>%
   filter(year > 10) %>%
   select(-date, -year) %>%
   mutate(logN=log(N+1)) %>%
-  group_by(id, sim, month, stage, depth, landscape, lmType) %>%
+  group_by(id, sim, month, stage, depth, landscape) %>%
   summarise(across(any_of(c(x_vars, y_vars)), .names="{.col}_{.fn}", 
                    .fn=list(md=median, mn=mean, sd=sd, min=min, max=max, pOcc=~sum(.x>1)/n())))
 pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
@@ -49,12 +49,14 @@ mass.sum <- mass.df %>%
   filter(year > 10) %>%
   select(-date, -year, -month) %>%
   mutate(logBiomass=log(biomass+1)) %>%
-  group_by(id, sim, depth, landscape, lmType) %>%
+  group_by(id, sim, depth, landscape) %>%
   summarise(across(any_of(c(x_vars, y_vars)), .names="{.col}_{.fn}", 
                    .fn=list(md=median, mn=mean, sd=sd, min=min, max=max)))
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
 
 
+saveRDS(pop.df, glue("temp\\pop_df_{gridRes}.rds"))
+saveRDS(mass.df, glue("temp\\mass_df_{gridRes}.rds"))
 saveRDS(pop.sum, glue("temp\\pop_sum_{gridRes}.rds"))
 saveRDS(mass.sum, glue("temp\\mass_sum_{gridRes}.rds"))
 
@@ -65,9 +67,9 @@ saveRDS(mass.sum, glue("temp\\mass_sum_{gridRes}.rds"))
 sim.title <- glue("0.5 arc-sec grid")
 grid.sf <- st_read(glue("data\\grid_0.5_MODIS.gpkg")) %>%
   select(id, geom, PAR_surface)
-pop.sum <- readRDS("temp\\pop_sum_0.5.rds") %>% filter(lmType=="brms")
+pop.sum <- readRDS("temp\\pop_sum_0.5.rds")
 pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
-mass.sum <- readRDS("temp\\mass_sum_0.5.rds") %>% filter(lmType=="brms") 
+mass.sum <- readRDS("temp\\mass_sum_0.5.rds")
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
 
 sim.title <- glue("0.25 arc-sec grid")

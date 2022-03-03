@@ -21,23 +21,21 @@ data.dir <- "..\\data\\digitized\\"
 supp.f <- "..\\data\\collab\\collab_all.xlsx"
 
 # switches & settings
-lmType <- c("lm", "brms")[2]
-PAR_datasource <- c("MODIS", "POWER")[1]
-gridRes <- 0.5
+gridRes <- 0.1
 dynamicLandscape <- T
-depths <- c(2, 5, 10, 15)
-tmax <- 30
+depths <- c(2, 10, 20)
+tmax <- 100
 nSim <- 1
 options(mc.cores=12)
 
 # load files
-grid.sf <- st_read(glue("data\\grid_{gridRes}_{PAR_datasource}.gpkg"))
+grid.sf <- st_read(glue("data\\grid_{gridRes}_MODIS.gpkg"))
 grid.i <- grid.sf %>% st_drop_geometry() %>%
   rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn) %>%
   select(id, SST, KD, PAR, fetch, fetchCat)
 data.ls <- compileDatasets(data.dir, supp.f)
-lm.fit <- readRDS(glue("data\\fits_{gridRes}_{lmType}_{PAR_datasource}.rds"))
-lm.mnsd <- readRDS(glue("data\\dfs_mn_sd_{gridRes}_{PAR_datasource}.rds"))
+lm.fit <- readRDS(glue("data\\fits_{gridRes}.rds"))
+lm.mnsd <- readRDS(glue("data\\dfs_mn_sd_{gridRes}}.rds"))
 surv.df <- data.ls$stageFrom_stageTo %>% 
   filter(stageTo=="dead") %>%
   mutate(survRate=1-rate,
@@ -74,7 +72,7 @@ if(dynamicLandscape) {
 
 
 library(parallel)
-cl <- makeCluster(10, outfile="temp\\sim_out.txt")
+cl <- makeCluster(12, outfile="temp\\sim_out.txt")
 obj.exclude <- c("data.ls", "grid.sf")
 obj.include <- ls()
 
@@ -84,7 +82,7 @@ Sys.sleep(5)
 cat("Exported. Starting parallel runs.")
 out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=runSimsInParallel,
                     grid.i=grid.i, grid.sim=grid.sim, depths=depths, tmax=tmax, 
-                    nSim=nSim, lmType=lmType, gridRes=gridRes, 
+                    nSim=nSim, gridRes=gridRes, 
                     dynamicLandscape=dynamicLandscape, surv.df=surv.df, 
                     fecund.df=fecund.df, lm.fit=lm.fit, lm.mnsd=lm.mnsd)
 stopCluster(cl)

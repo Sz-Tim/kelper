@@ -508,7 +508,7 @@ simulateLandscape <- function(grid.sf, var.sf, nYr, colName) {
 
 
 
-getPrediction <- function(mod, lmType, ndraws, new.df, scale.df, y_var) {
+getPrediction <- function(mod, ndraws, new.df, scale.df, y_var) {
   # center and scale predictors to match regression inputs
   for(i in 1:ncol(new.df)) {
     if(is.numeric(new.df[[i]])) {
@@ -516,11 +516,9 @@ getPrediction <- function(mod, lmType, ndraws, new.df, scale.df, y_var) {
       new.df[[i]] <- (new.df[[i]] - scale.df$ctr[scale.row])/scale.df$scl[scale.row]
     }
   }
-  if(lmType=="brms") {
-    pred <- colMeans(posterior_epred(mod, newdata=new.df, ndraws=ndraws, re.form=NA))
-  } else {
-    pred <- predict(mod, new.df, re.form=NA, type="response")
-  }
+  
+  pred <- colMeans(posterior_epred(mod, newdata=new.df, ndraws=ndraws, re.form=NA))
+  
   # de-center and de-scale predictions to natural scale
   if(y_var != "N") {
     scale.row <- which(scale.df$Par==y_var)
@@ -534,12 +532,12 @@ getPrediction <- function(mod, lmType, ndraws, new.df, scale.df, y_var) {
 
 
 runSimsInParallel <- function(x, grid.i, grid.sim=NULL, 
-                              depths, tmax, nSim, lmType, gridRes, dynamicLandscape, 
+                              depths, tmax, nSim, gridRes, landscape, 
                               surv.df, fecund.df, 
                               lm.fit, lm.mnsd) {
   library(glue); library(lubridate); library(sf); library(brms); 
-  library(lme4); library(glmmTMB); library(tidyverse)
-  if(dynamicLandscape) {
+  library(tidyverse)
+  if(landscape=="dynamic") {
     cell.env <- grid.sim %>% st_drop_geometry() %>% filter(id==grid.i$id[x])
   } else {
     cell.env <- grid.i[x,]
@@ -549,7 +547,7 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
     par_i <- setParameters(
       tmax=tmax, 
       survRate=filter(surv.df, exposure==cell.env$fetchCat[1])$survRate^(1/2),
-      settlementRateBg=filter(fecund.df, exposure==cell.env$fetchCat[1])$rate,
+      settlementRateBg=filter(fecund.df, exposure==cell.env$fetchCat[1])$rate_mn,
       extraPars=list(
         depth=depths[j],
         env=cell.env,
@@ -562,7 +560,7 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
         canopyHeight=lm.fit$canopyHeight.lm,
         sc.df=lm.mnsd)
     )
-    out <- map(1:nSim, ~simulatePopulation(par_i, lmType=lmType, ndraws=50))
+    out <- map(1:nSim, ~simulatePopulation(par_i, ndraws=50))
     pop.ls[[j]] <- imap_dfr(out, 
                             ~tibble(sim=.y, 
                                     year=rep(1:par_i$tmax, 3),
@@ -583,8 +581,7 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
       mutate(id=x) %>%
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
-             landscape=ifelse(dynamicLandscape,'dynamic','static'),
-             lmType=lmType)
+             landscape=landscape)
     mass.ls[[j]] <- imap_dfr(out,
                              ~tibble(sim=.y,
                                      year=rep(1:par_i$tmax, 3),
@@ -598,11 +595,9 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
       mutate(id=x) %>%
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
-             landscape=ifelse(dynamicLandscape,'dynamic','static'),
-             lmType=lmType)
+             landscape=landscape)
   }
-  sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{lmType}",
-                   "_{ifelse(dynamicLandscape,'dynamic','static')}")
+  sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{landscape}")
   saveRDS(do.call(rbind, pop.ls), glue("out\\pop_{sim.info}.rds"))
   saveRDS(do.call(rbind, mass.ls), glue("out\\mass_{sim.info}.rds"))
   return(x)

@@ -19,18 +19,15 @@ walk(dir("code", "^00.*R", full.names=T), source)
 options(mc.cores=4)
 
 # switches
-PAR_datasource <- c("MODIS", "POWER")[1]
-lmType <- c("lm", "brms")[2]
 gridRes <- 0.25
 
 # directories
 gis.dir <- "..\\..\\00_gis\\"
 data.dir <- "..\\data\\digitized\\"
-lm.dir <- paste0("data\\", lmType)
 supp.f <- "..\\data\\collab\\collab_all.xlsx"
 
 # datasets
-grid.sf <- st_read(glue("data\\grid_{gridRes}_{PAR_datasource}.gpkg")) %>%
+grid.sf <- st_read(glue("data\\grid_{gridRes}_MODIS.gpkg")) %>%
   rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn)
 covars.ls <- loadCovariates(loadFile="data\\covar_ls.rds")
 data.ls <- compileDatasets(data.dir, supp.f) %>%
@@ -157,88 +154,24 @@ dfs.scaled$N_canopy.lm$N <- reg.dfs$N_canopy.lm$N
 ########
 ##-- Fit regressions
 
-# Model comparison
-compareModels <- F
-
-if(compareModels) {
-  reg.fit <- vector("list", length(reg.full)) %>% setNames(names(reg.full))
-  options(na.action="na.fail")
-  library(MuMIn)
-  reg.fit$lenSt_to_wtSt.lm <- lmer(reg.full$lenSt_to_wtSt.lm, dfs.scaled$lenSt_to_wtSt.lm)
-  reg.fit$lenSt_to_wtFr.lm <- lmer(reg.full$lenSt_to_wtFr.lm, dfs.scaled$lenSt_to_wtFr.lm)
-  reg.fit$wtFr_to_arFr.lm <- lm(reg.full$wtFr_to_arFr.lm, dfs.scaled$wtFr_to_arFr.lm)
-  reg.fit$arFr_to_wtFr.lm <- lm(reg.full$arFr_to_wtFr.lm, dfs.scaled$arFr_to_wtFr.lm)
-  reg.fit$canopyHeight.lm <- lm(reg.full$canopyHeight.lm, dfs.scaled$canopyHeight.lm)
-  reg.fit$FAI.lm <- lm(reg.full$FAI.lm, dfs.scaled$FAI.lm)
-  reg.fit$N_canopy.lm <- glmmTMB(as.formula(reg.full$N_canopy.lm[1]),
-                                 ziformula=as.formula(reg.full$N_canopy.lm[2]),
-                                 data=dfs.scaled$N_canopy.lm, family=nbinom2)
-  reg.compare <- map(reg.fit, dredge)
-  map(reg.compare, ~t(cbind(.x[1,])))
-  options(na.action="na.omit") 
-  opt.params <- map(reg.compare, ~t(cbind(.x[1,]))) %>% 
-    map(~rownames(.x)[!is.na(.x)]) %>% 
-    map(~.x[! .x %in% c("(Intercept)", "df", "logLik", "AICc", "delta", "weight")]) %>%
-    map(~paste(.x, collapse=" + "))
-  opt.params$N_canopy.lm <- c(
-    opt.params$N_canopy.lm %>% 
-      str_split(., " \\+ ") %>% unlist %>%
-      grep("cond", ., value=T) %>%
-      grep("Int", ., value=T, invert=T) %>%
-      str_remove("cond\\(") %>% str_remove("\\)") %>%
-      paste(., collapse=" + "),
-    opt.params$N_canopy.lm %>% 
-      str_split(., " \\+ ") %>% unlist %>%
-      grep("zi", ., value=T) %>%
-      grep("Int", ., value=T, invert=T) %>%
-      str_remove("zi\\(") %>% str_remove("\\)") %>%
-      paste(., collapse=" + ")
-    )
-  reg.best <- list(
-    lenSt_to_wtSt.lm=paste("logWtStipe ~", opt.params$lenSt_to_wtSt.lm, "+ (1|location)"),
-    lenSt_to_wtFr.lm=paste("logWtFrond ~", opt.params$lenSt_to_wtFr.lm, "+ (1|location)"),
-    wtFr_to_arFr.lm=paste("logAreaFrond ~", opt.params$wtFr_to_arFr.lm),
-    arFr_to_wtFr.lm=paste("logWtFrond ~", opt.params$arFr_to_wtFr.lm),
-    canopyHeight.lm=paste("maxStipeLen ~", opt.params$canopyHeight.lm),
-    FAI.lm=paste("FAI ~", opt.params$FAI.lm),
-    N_canopy.lm=c(paste("N ~", opt.params$N_canopy.lm[1]),
-                  paste("~", opt.params$N_canopy.lm[2]))
-  )
-}
-
-
-
-
 reg.fit <- vector("list", length(reg.best)) %>% setNames(names(reg.best))
-if(lmType=="lm") {
-  reg.fit$lenSt_to_wtSt.lm <- lmer(reg.best$lenSt_to_wtSt.lm, dfs.scaled$lenSt_to_wtSt.lm)
-  reg.fit$lenSt_to_wtFr.lm <- lmer(reg.best$lenSt_to_wtFr.lm, dfs.scaled$lenSt_to_wtFr.lm)
-  reg.fit$wtFr_to_arFr.lm <- lm(reg.best$wtFr_to_arFr.lm, dfs.scaled$wtFr_to_arFr.lm)
-  reg.fit$arFr_to_wtFr.lm <- lm(reg.best$arFr_to_wtFr.lm, dfs.scaled$arFr_to_wtFr.lm)
-  reg.fit$canopyHeight.lm <- lm(reg.best$canopyHeight.lm, dfs.scaled$canopyHeight.lm)
-  reg.fit$FAI.lm <- lm(reg.best$FAI.lm, dfs.scaled$FAI.lm)
-  reg.fit$N_canopy.lm <- glmmTMB(as.formula(reg.best$N_canopy.lm[1]),
-                                 ziformula=as.formula(reg.best$N_canopy.lm[2]),
-                                 data=dfs.scaled$N_canopy.lm, family=nbinom2)
-} else if(lmType=="brms") {
-  reg.fit$lenSt_to_wtSt.lm <- brm(reg.best$lenSt_to_wtSt.lm, dfs.scaled$lenSt_to_wtSt.lm, 
-                                  cores=4, prior=priors, family=gaussian())
-  reg.fit$lenSt_to_wtFr.lm <- brm(reg.best$lenSt_to_wtFr.lm, dfs.scaled$lenSt_to_wtFr.lm, 
-                                  cores=4, prior=priors[-4,], family=gaussian())
-  reg.fit$wtFr_to_arFr.lm <- brm(reg.best$wtFr_to_arFr.lm, dfs.scaled$wtFr_to_arFr.lm, 
-                                 cores=4, prior=priors[-4,], family=gaussian())
-  reg.fit$arFr_to_wtFr.lm <- brm(reg.best$arFr_to_wtFr.lm, dfs.scaled$arFr_to_wtFr.lm, 
-                                 cores=4, prior=priors[-4,], family=gaussian())
-  reg.fit$canopyHeight.lm <- brm(reg.best$canopyHeight.lm, dfs.scaled$canopyHeight.lm, 
-                                 cores=4, prior=priors[-4,],
-                                 family=gaussian())
-  reg.fit$FAI.lm <- brm(reg.best$FAI.lm, dfs.scaled$FAI.lm, cores=4, 
-                        prior=priors[-4,], family=gaussian())
-  reg.fit$N_canopy.lm <- brm(bf(reg.best$N_canopy.lm[1],
-                                paste("zi", reg.best$N_canopy.lm[2])), 
-                             data=dfs.scaled$N_canopy.lm, cores=4,
-                             prior=priors[-3,], family=zero_inflated_negbinomial())
-}
+reg.fit$lenSt_to_wtSt.lm <- brm(reg.best$lenSt_to_wtSt.lm, dfs.scaled$lenSt_to_wtSt.lm, 
+                                cores=4, prior=priors, family=gaussian())
+reg.fit$lenSt_to_wtFr.lm <- brm(reg.best$lenSt_to_wtFr.lm, dfs.scaled$lenSt_to_wtFr.lm, 
+                                cores=4, prior=priors[-4,], family=gaussian())
+reg.fit$wtFr_to_arFr.lm <- brm(reg.best$wtFr_to_arFr.lm, dfs.scaled$wtFr_to_arFr.lm, 
+                               cores=4, prior=priors[-4,], family=gaussian())
+reg.fit$arFr_to_wtFr.lm <- brm(reg.best$arFr_to_wtFr.lm, dfs.scaled$arFr_to_wtFr.lm, 
+                               cores=4, prior=priors[-4,], family=gaussian())
+reg.fit$canopyHeight.lm <- brm(reg.best$canopyHeight.lm, dfs.scaled$canopyHeight.lm, 
+                               cores=4, prior=priors[-4,],
+                               family=gaussian())
+reg.fit$FAI.lm <- brm(reg.best$FAI.lm, dfs.scaled$FAI.lm, cores=4, 
+                      prior=priors[-4,], family=gaussian())
+reg.fit$N_canopy.lm <- brm(bf(reg.best$N_canopy.lm[1],
+                              paste("zi", reg.best$N_canopy.lm[2])), 
+                           data=dfs.scaled$N_canopy.lm, cores=4,
+                           prior=priors[-3,], family=zero_inflated_negbinomial())
 
 
 
@@ -246,11 +179,11 @@ if(lmType=="lm") {
 ########
 ##-- Save output
 
-saveRDS(reg.fit, glue::glue("data\\fits_{gridRes}_{lmType}_{PAR_datasource}.rds"))
-saveRDS(reg.best, glue::glue("data\\opt_{gridRes}_{lmType}_{PAR_datasource}.rds"))
-saveRDS(dfs.scaled, glue::glue("data\\dfs_scaled_{gridRes}_{PAR_datasource}.rds"))
-saveRDS(reg.dfs, glue::glue("data\\dfs_{gridRes}_{PAR_datasource}.rds"))
-saveRDS(reg.dfs_mn_sd, glue::glue("data\\dfs_mn_sd_{gridRes}_{PAR_datasource}.rds"))
+saveRDS(reg.fit, glue::glue("data\\fits_{gridRes}.rds"))
+saveRDS(reg.best, glue::glue("data\\opt_{gridRes}.rds"))
+saveRDS(dfs.scaled, glue::glue("data\\dfs_scaled_{gridRes}.rds"))
+saveRDS(reg.dfs, glue::glue("data\\dfs_{gridRes}.rds"))
+saveRDS(reg.dfs_mn_sd, glue::glue("data\\dfs_mn_sd_{gridRes}.rds"))
 
 
 
