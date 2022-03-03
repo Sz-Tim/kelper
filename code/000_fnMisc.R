@@ -535,8 +535,8 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
                               depths, tmax, nSim, gridRes, landscape, 
                               surv.df, fecund.df, 
                               lm.fit, lm.mnsd) {
-  library(glue); library(lubridate); library(sf); library(brms); 
-  library(tidyverse)
+  library(glue); library(lubridate); library(sf); library(brms)
+  library(lme4); library(glmmTMB); library(tidyverse)
   if(landscape=="dynamic") {
     cell.env <- grid.sim %>% st_drop_geometry() %>% filter(id==grid.i$id[x])
   } else {

@@ -10,7 +10,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   # TODO: simulate all parameter values at start, pull by index
   # TODO: 2 switches: dynamicLandscape, stochParams
   
-  library(tidyverse); library(brms)
+  library(tidyverse); library(brms); library(lme4); library(glmmTMB)
   #---- setup landscape
   env.df <- pars$env %>% 
     mutate(PAR_atDepth=PAR * exp(-KD * pars$depth),
