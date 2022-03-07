@@ -102,22 +102,22 @@ growDens <- function(propOccupiedSpace, g0, g1, sizeClass) {
 #' @param A.mx Transition matrix
 #' @param kappa FAI_orig/FAI_K
 #' @param logAreaFrond.stage Vector of log frond areas calculated allometrically for each size class
-#' @param pars parameter list
+#' @param growRateFrond Vector of frond growth rate for each size class
 #'
 #' @return
 #' @export
 #'
 #' @examples
-growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, pars) {
+growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, growRateFrond) {
   # Laminaria hyperborea exhibits a 'May cast', where the previous year's growth 
   # is shed essentially in its entirety. For other less deciduous species, 
   # FAI_new[j] would include FAI_orig[j] * A.mx[j,j] in the sum
   FAI_new <- rep(0, length(N_orig))
   # recruits: (surviving FAI) + (new growth within stage)
-  FAI_new[1] <- N_orig[1]*A.mx[1,1]*pars$growthRateFrond[1]*(1-kappa)
+  FAI_new[1] <- N_orig[1]*A.mx[1,1]*growRateFrond[1]*(1-kappa)
   for(j in 2:length(N_orig)) {
     # others: (surviving FAI) + (new growth within stage) + (FAI of newcomers)
-    FAI_new[j] <- N_orig[j]*A.mx[j,j]*pars$growthRateFrond[j] +
+    FAI_new[j] <- N_orig[j]*A.mx[j,j]*growRateFrond[j] +
       N_orig[j-1]*A.mx[j,j-1]*exp(logAreaFrond.stage[j])
   }
   
@@ -143,7 +143,7 @@ calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df) {
     stipeMass[,year,] <- N[,year,] * exp(lwtStipe[year,])
     
   }
-  return(apply((stipeMass + frondMass), 2:3, sum)/1e3)
+  return(apply((stipeMass + frondMass), 2:3, sum, na.rm=T)/1e3)
 }
 
 
