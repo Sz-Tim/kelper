@@ -21,11 +21,12 @@ data.dir <- "..\\data\\digitized\\"
 supp.f <- "..\\data\\collab\\collab_all.xlsx"
 
 # switches & settings
-gridRes <- 0.1
-dynamicLandscape <- T
+gridRes <- c(0.1, 0.25)[2]
+stochParams <- T
+landscape <- c("static", "dynamic")[1]
 depths <- c(2, 10, 20)
-tmax <- 100
-nSim <- 1
+tmax <- 20
+nSim <- 10
 options(mc.cores=12)
 
 # load files
@@ -35,10 +36,10 @@ grid.i <- grid.sf %>% st_drop_geometry() %>%
   select(id, SST, KD, PAR, fetch, fetchCat)
 data.ls <- compileDatasets(data.dir, supp.f)
 lm.fit <- readRDS(glue("data\\fits_{gridRes}.rds"))
-lm.mnsd <- readRDS(glue("data\\dfs_mn_sd_{gridRes}}.rds"))
+lm.mnsd <- readRDS(glue("data\\dfs_mn_sd_{gridRes}.rds"))
 surv.df <- data.ls$stageFrom_stageTo %>% 
   filter(stageTo=="dead") %>%
-  mutate(survRate=1-rate,
+  mutate(survRate=1-rate_mn,
          exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
 fecund.df <- data.ls$stageFrom_stageTo %>% 
   filter(stageFrom=="canopy" & stageTo=="recruits") %>%
@@ -46,7 +47,7 @@ fecund.df <- data.ls$stageFrom_stageTo %>%
 
 # simulate landscapes if needed
 set.seed(789)
-if(dynamicLandscape) {
+if(landscape=="dynamic") {
   covars.full <- loadCovariates_full(loadFile="data\\covarFull_ls.rds")
   grid.sim <- grid.sf %>% select(id) %>%
     simulateLandscape(covars.full$sstDayGrow, tmax, "SST") %>%
@@ -80,10 +81,11 @@ cat("Exporting cluster.")
 clusterExport(cl, obj.include[-match(obj.exclude, obj.include)])
 Sys.sleep(5)
 cat("Exported. Starting parallel runs.")
-out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=runSimsInParallel,
+out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=simDepthsWithinCell,
                     grid.i=grid.i, grid.sim=grid.sim, depths=depths, tmax=tmax, 
                     nSim=nSim, gridRes=gridRes, 
-                    dynamicLandscape=dynamicLandscape, surv.df=surv.df, 
-                    fecund.df=fecund.df, lm.fit=lm.fit, lm.mnsd=lm.mnsd)
+                    landscape=landscape, stochParams=stochParams, 
+                    surv.df=surv.df, fecund.df=fecund.df, 
+                    lm.fit=lm.fit, lm.mnsd=lm.mnsd)
 stopCluster(cl)
 
