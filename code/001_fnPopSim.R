@@ -7,19 +7,30 @@
 
 simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   
-  # TODO: simulate all parameter values at start, pull by index
-  # TODO: 2 switches: dynamicLandscape, stochParams
-  
   library(tidyverse); library(brms); library(lme4); library(glmmTMB)
   #---- setup landscape
   env.df <- pars$env %>% 
     mutate(PAR_atDepth=PAR * exp(-KD * pars$depth),
            location=NA) %>%
     select(PAR_atDepth, SST, fetch, location)
-  staticLandscape <- nrow(pars$env) == 1
-  if(staticLandscape) {
+  if(nrow(pars$env) == 1) {
     env.df <- env.df %>% uncount(pars$tmax)
   }
+  #---- setup parameters
+  if(pars$stochParams) {
+    par.yr <- list(loss=rbeta(pars$tmax, prod(pars$lossRate), (1-pars$lossRate[1])*pars$lossRate[2]),
+                   settlement=pmax(0, rnorm(pars$tmax, pars$settlementRate[1], pars$settlementRate[2])),
+                   surv=apply(pars$survRate, 1, function(x) pmax(0, pmin(1, rnorm(pars$tmax, x[1], x[2])))),
+                   growStipeMax=apply(pars$growthRateStipeMax, 1, function(x) rnorm(pars$tmax, x[1], x[2])),
+                   growFrond=apply(pars$growthRateFrond, 1, function(x) rnorm(pars$tmax, x[1], x[2])))
+  } else {
+    par.yr <- list(loss=rep(pars$lossRate[1], pars$tmax),
+                   settlement=rep(pars$settlementRate[1], pars$tmax),
+                   surv=apply(pars$survRate, 1, function(x) rep(x[1], pars$tmax)),
+                   growStipeMax=apply(pars$growthRateStipeMax, 1, function(x) rep(x[1], pars$tmax)),
+                   growFrond=apply(pars$growthRateFrond, 1, function(x) rep(x[1], pars$tmax)))
+  }
+  par.yr$surv <- sqrt(par.yr$surv) # annual rates to 1/2 year rates
   
   #---- global parameters
   ## maxStipeLen = maximum expected canopy height
@@ -30,7 +41,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   maxStipeLen <- getPrediction(pars$canopyHeight, ndraws, 
                                env.df %>% summarise(across(.fns=mean)) %>% mutate(location=NA_character_),
                                pars$sc.df$canopyHeight.lm, "maxStipeLen")
-  sizeClassLimits <- maxStipeLen * (0:3)/3
+  sizeClassLimits <- maxStipeLen * c(0, 0.2, 0.8, 1)#(0:3)/3
   sizeClassMdpts <- (sizeClassLimits+lag(sizeClassLimits))[-1]/2
   
   K_N <- pmax(1e-2, getPrediction(pars$N_canopy, ndraws, env.df,
@@ -86,19 +97,19 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
     kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI[year], N[3,year,season]/K_N[year]))
 
     # growth
-    growRate_i <- pars$growthRateStipeMax * (1-max(kappa[year,season,1])^pars$growthRateDensityShape)
+    growRate_i <- par.yr$growStipeMax[year,] * (1-max(kappa[year,season,1])^pars$growthRateDensityShape)
     prGrowToNext <- growRate_i/(sizeClassLimits-lag(sizeClassLimits))[-1]
-    A[[1]][2,1] <- pars$survRate[1]*prGrowToNext[1]
-    A[[1]][3,2] <- pars$survRate[2]*prGrowToNext[2]
+    A[[1]][2,1] <- par.yr$surv[year,1]*prGrowToNext[1]
+    A[[1]][3,2] <- par.yr$surv[year,2]*prGrowToNext[2]
     # survival
-    A[[1]][1,1] <- pars$survRate[1] - A[[1]][2,1]
-    A[[1]][2,2] <- pars$survRate[2] - A[[1]][3,2]
-    A[[1]][3,3] <- pars$survRate[3]
+    A[[1]][1,1] <- par.yr$surv[year,1] - A[[1]][2,1]
+    A[[1]][2,2] <- par.yr$surv[year,2] - A[[1]][3,2]
+    A[[1]][3,3] <- par.yr$surv[year,3]
     # update population
     N[,year,season+1] <- A[[1]] %*% N[,year,season]
     FAI[,year,season+1] <- growFrondArea(FAI[,year,season], N[,year,season], 
                                          A[[1]], kappa[year,season,1],
-                                         logAreaFrond.stage[year,], pars)
+                                         logAreaFrond.stage[year,], par.yr$growFrond[year,])
     
     
     #---- harvest:
@@ -122,12 +133,12 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
     
     if(year < pars$tmax) {
       # survival
-      diag(A[[2]]) <- pars$survRate
+      diag(A[[2]]) <- par.yr$surv[year,]
       # update population
       N[,year+1,1] <- A[[2]] %*% N[,year,season]
       # reproduction
-      N[1,year+1,1] <- pars$settlementRateBg*(1-max(kappa[year,season,]))
-      FAI[,year+1,1] <- FAI[,year,season] * pmax(0, (diag(A[[2]]) - pars$lossRate))
+      N[1,year+1,1] <- par.yr$settlement[year]*(1-max(kappa[year,season,]))
+      FAI[,year+1,1] <- FAI[,year,season] * pmax(0, (diag(A[[2]]) - par.yr$loss[year]))
     }
     
   }
@@ -137,9 +148,8 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   biomass <- calcBiomass(N, FAI, logWtStipe.stage, pars$arFr_to_wtFr,
                          ndraws, env.df, pars$sc.df$arFr_to_wtFr.lm)
   
-  return(list(N=N, FAI=FAI, harvest=harvest, kappa=kappa,
-              K_FAI=K_FAI, K_N=K_N, biomass=biomass,
-              PAR=env.df$PAR_atDepth))
+  return(list(N=N, FAI=FAI, harvest=harvest, kappa=kappa, K_FAI=K_FAI, K_N=K_N,
+              biomass=biomass, PAR=env.df$PAR_atDepth))
 }
 
 
