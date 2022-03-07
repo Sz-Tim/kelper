@@ -129,19 +129,22 @@ compileDatasets <- function(data.dir, supp.f=NULL) {
 setParameters <- function(path=NULL,
                           override=NULL,
                           tmax=20,
-                          growthRateStipeMax=c(194, 195, 58), # Kain 1976
+                          growthRateStipeMax=cbind(c(194, 195, 58),
+                                                   c(23, 21, 10)), # Kain 1976
                           # growthRateStipeMax=c(74, 74, 29), # Rinde & Sjotun 2005 southern pop
-                          growthRateFrond=c(1787, 2299, 3979)/1e4, # m^2/plant/spring
+                          growthRateFrond=cbind(c(1787, 2299, 3979)/1e4,
+                                                c(179, 397, 417)/1e4), # m^2/plant/growing season
                           frondAreaMax=5500/1e4,
                           growthRateDensityShape=0.5,
                           sizeClassLimits=(1000 * (0:6)/6)[c(1,2,5,7)],
                           survRate=c(0.4, 0.7, 0.9),
-                          settlementRateBg=400,
+                          settlementRate=400,
                           lossRate=0.2345,
                           prFullHarvest=0,
                           freqHarvest=1e5,
                           harvestTarget=c("all", "stipe", "frond")[1],
-                          extraPars=NULL
+                          extraPars=NULL,
+                          stochParams=FALSE
                           ) {
   
   if(!is.null(path)) {
@@ -156,6 +159,7 @@ setParameters <- function(path=NULL,
       
       # simulation 
       tmax=tmax,
+      stochParams=stochParams,
       
       # growth
       growthRateStipeMax=growthRateStipeMax,
@@ -169,7 +173,7 @@ setParameters <- function(path=NULL,
       survRate=survRate,
       
       # settlement
-      settlementRateBg=settlementRateBg,
+      settlementRate=settlementRate,
       
       # loss
       lossRate=lossRate,
@@ -531,8 +535,13 @@ getPrediction <- function(mod, ndraws, new.df, scale.df, y_var) {
 
 
 
-runSimsInParallel <- function(x, grid.i, grid.sim=NULL, 
-                              depths, tmax, nSim, gridRes, landscape, 
+
+
+
+
+simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, 
+                              depths, tmax, nSim, gridRes, 
+                              landscape, stochParams,
                               surv.df, fecund.df, 
                               lm.fit, lm.mnsd) {
   library(glue); library(lubridate); library(sf); library(brms)
@@ -546,8 +555,12 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
   for(j in 1:length(depths)) {
     par_i <- setParameters(
       tmax=tmax, 
-      survRate=filter(surv.df, exposure==cell.env$fetchCat[1])$survRate^(1/2),
-      settlementRateBg=filter(fecund.df, exposure==cell.env$fetchCat[1])$rate_mn,
+      survRate=cbind(filter(surv.df, exposure==cell.env$fetchCat[1])$survRate,
+                     filter(surv.df, exposure==cell.env$fetchCat[1])$rate_sd),
+      settlementRate=c(filter(fecund.df, exposure==cell.env$fetchCat[1])$rate_mn,
+                       filter(fecund.df, exposure==cell.env$fetchCat[1])$rate_sd),
+      lossRate=c(0.2340987, 90.1752),
+      stochParams=stochParams,
       extraPars=list(
         depth=depths[j],
         env=cell.env,
@@ -560,7 +573,7 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
         canopyHeight=lm.fit$canopyHeight.lm,
         sc.df=lm.mnsd)
     )
-    out <- map(1:nSim, ~simulatePopulation(par_i, ndraws=50))
+    out <- map(1:nSim, ~simulatePopulation(par_i, ndraws=ifelse(stochParams, 50, 4e3)))
     pop.ls[[j]] <- imap_dfr(out, 
                             ~tibble(sim=.y, 
                                     year=rep(1:par_i$tmax, 3),
@@ -581,7 +594,8 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
       mutate(id=x) %>%
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
-             landscape=landscape)
+             landscape=landscape,
+             stochParams=stochParams)
     mass.ls[[j]] <- imap_dfr(out,
                              ~tibble(sim=.y,
                                      year=rep(1:par_i$tmax, 3),
@@ -595,12 +609,223 @@ runSimsInParallel <- function(x, grid.i, grid.sim=NULL,
       mutate(id=x) %>%
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
-             landscape=landscape)
+             landscape=landscape,
+             stochParams=stochParams)
   }
-  sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{landscape}")
+  sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{landscape}",
+                   "_{ifelse(stochParams, 'stochPar', 'optPar')}")
   saveRDS(do.call(rbind, pop.ls), glue("out\\pop_{sim.info}.rds"))
   saveRDS(do.call(rbind, mass.ls), glue("out\\mass_{sim.info}.rds"))
   return(x)
 }
+
+
+
+
+
+
+
+
+
+simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens, 
+                                           lm.fit, lm.mnsd, parSets) {
+  library(glue); library(lubridate); library(sf); library(brms)
+  library(lme4); library(glmmTMB); library(tidyverse)
+  
+  # setup landscape and parameters
+  cell.env <- grid.i[x,]
+  grStipe.draws <- parSets[[4]] %>% filter(param=="growStipe") %>% group_split(parDraw)
+  grFrond.draws <- parSets[[4]] %>% filter(param=="growFrond") %>% group_split(parDraw)
+  loss.draws <- parSets[[4]] %>% filter(param=="loss")
+  surv.draws <- parSets[[cell.env$fetchCat]] %>% filter(param=="surv") %>% group_split(parDraw)
+  settle.draws <- parSets[[cell.env$fetchCat]] %>% filter(param=="settlement")
+  
+  pop.depth <- mass.depth <- vector("list", length(pars.sens$depths))
+  for(j in 1:length(pars.sens$depths)) {
+    pop.ls <- mass.ls <- vector("list", pars.sens$nParDraws)
+    for(k in 1:pars.sens$nParDraws) {
+      par_i <- setParameters(
+        tmax=pars.sens$tmax, 
+        growthRateStipeMax=cbind(grStipe.draws[[k]]$val),
+        growthRateFrond=cbind(grFrond.draws[[k]]$val),
+        lossRate=loss.draws$val[k],
+        survRate=cbind(surv.draws[[k]]$val),
+        settlementRate=settle.draws$val[k],
+        stochParams=pars.sens$stochParams,
+        extraPars=list(
+          depth=pars.sens$depths[j],
+          env=cell.env,
+          lenSt_to_wtSt=lm.fit$lenSt_to_wtSt.lm,
+          lenSt_to_wtFr=lm.fit$lenSt_to_wtFr.lm,
+          wtFr_to_arFr=lm.fit$wtFr_to_arFr.lm,
+          arFr_to_wtFr=lm.fit$arFr_to_wtFr.lm,
+          N_canopy=lm.fit$N_canopy.lm,
+          FAI=lm.fit$FAI.lm,
+          canopyHeight=lm.fit$canopyHeight.lm,
+          sc.df=lm.mnsd)
+      )
+      out <- map(1:pars.sens$nSim, ~simulatePopulation(par_i, ndraws=4e3))
+      pop.ls[[k]] <- imap_dfr(out, 
+                              ~tibble(sim=.y, 
+                                      year=rep(1:par_i$tmax, 3),
+                                      month=rep(c(1,6,7), each=par_i$tmax),
+                                      date=ymd(glue("{year}-{month}-01")),
+                                      N.recruits=c(.x$N[1,,]),
+                                      N.subcanopy=c(.x$N[2,,]),
+                                      N.canopy=c(.x$N[3,,])) %>%
+                                pivot_longer(contains("N."), names_to="stage", values_to="N") %>%
+                                mutate(stage=factor(str_sub(stage, 3, -1), 
+                                                    levels=c("canopy", "subcanopy", "recruits")))) %>%
+        filter(month != 6 & year > pars.sens$tskip) %>%
+        mutate(N=replace(N, N<=0, 1e-4)) %>%
+        group_by(sim, month, stage) %>%
+        summarise(N_mn=mean(N), N_md=median(N), N_sd=sd(N),
+                  lN_mn=mean(log(N+1)), lN_md=median(log(N+1)), lN_sd=sd(log(N+1))) %>%
+        mutate(parDraw=k)
+      mass.ls[[k]] <- imap_dfr(out,
+                               ~tibble(sim=.y,
+                                       year=rep(1:par_i$tmax, 3),
+                                       month=rep(c(1,6,7), each=par_i$tmax),
+                                       date=ymd(glue("{year}-{month}-01")),
+                                       PAR_atDepth=rep(.x$PAR, 3),
+                                       K_N=rep(.x$K_N, 3),
+                                       K_FAI=rep(.x$K_FAI, 3),
+                                       FAI=c(.x$FAI[3,,]),
+                                       biomass=c(.x$biomass),
+                                       kappa_FAI=c(.x$kappa[,,1]),
+                                       kappa_N=c(.x$kappa[,,2]))) %>%
+        filter(month != 6 & year > pars.sens$tskip) %>%
+        mutate(kappa=pmax(kappa_FAI, kappa_N)) %>%
+        group_by(sim, month) %>%
+        summarise(PAR_atDepth=first(PAR_atDepth), K_N=first(K_N), K_FAI=first(K_FAI),
+                  FAI_mn=mean(FAI), FAI_md=median(FAI), FAI_sd=sd(FAI),
+                  biomass_mn=mean(biomass), biomass_md=median(biomass), biomass_sd=sd(biomass),
+                  p_kFAI=mean(kappa_FAI==kappa), p_kN=mean(kappa_N==kappa),
+                  kappa_mn=mean(kappa), kappa_md=median(kappa), kappa_sd=sd(kappa),
+                  kFAI_mn=mean(kappa_FAI), kFAI_md=median(kappa_FAI), kFAI_sd=sd(kappa_FAI),
+                  kN_mn=mean(kappa_N), kN_md=median(kappa_N), kN_sd=sd(kappa_N)) %>%
+        mutate(parDraw=k) 
+    }
+    pop.depth[[j]] <- do.call(rbind, pop.ls) %>% mutate(depth=pars.sens$depths[j])
+    mass.depth[[j]] <- do.call(rbind, mass.ls) %>% mutate(depth=pars.sens$depths[j])
+  }
+  sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}")
+  saveRDS(do.call(rbind, pop.depth) %>% mutate(id=x), 
+          glue("out\\sensitivity\\pop_{sim.info}.rds"))
+  saveRDS(do.call(rbind, mass.depth) %>% mutate(id=x), 
+          glue("out\\sensitivity\\mass_{sim.info}.rds"))
+  return(x)
+}
+
+
+
+
+
+
+
+
+
+
+
+#' Emulate global sensitivity analysis output
+#'
+#' Emulate the output from a global sensitivity analysis using boosted
+#' regression trees with different interaction depths. Based on function
+#' described in Prowse et al 2016. Writes files to brt.dir
+#' @param sens.out Dataframe of the parameter sets and simulation summaries;
+#'   \code{.$results} from \link{global_sensitivity}
+#' @param params Vector of parameter names to include
+#' @param n.cores \code{1} Number of cores for fitting subsample BRTs
+#' @param n.sub \code{10} Number of subsamples for each emulation
+#' @param td \code{c(1,3,5)} Vector of regression tree interaction depths to
+#'   test
+#' @param resp Which response summary to use (column name from \code{sens.out})
+#' @param brt.dir \code{"out/brt/"} Directory to store boosted regression tree
+#'   output
+#' @return Success message
+#' @keywords parameters, sensitivity, save, output
+#' @export
+
+emulate_sensitivity <- function(sens.out, params, resp, brt.dir, siminfo, 
+                                n.sub=10, td=c(1,3,5)) {
+  library(tidyverse)
+  if(!dir.exists(brt.dir)) dir.create(brt.dir)
+  sub.prop <- seq(0.75, 1, length.out=n.sub)
+  
+  for(i in 1:n.sub) {
+    # subset sensitivity results
+    sub.samp <- sample_frac(sens.out, sub.prop[i]) %>% as.data.frame
+    n <- nrow(sub.samp)
+    
+    # fit BRTs of different tree complexities for given response variable
+    for(j in 1:length(td)) {
+      td_j <- td[j]
+      brt.fit <- dismo::gbm.step(sub.samp, gbm.x=params, gbm.y=resp, 
+                                 max.trees=200000, n.folds=5, 
+                                 family="gaussian", tree.complexity=td_j,
+                                 bag.fraction=0.8, silent=T, plot.main=F)
+      saveRDS(brt.fit, glue::glue("{brt.dir}\\{resp}_{siminfo}_td-{td_j}-{n}.rds"))
+    }
+  }
+  return(paste("Finished emulations of", resp))
+}
+
+
+
+
+
+
+
+
+
+#' Summarize BRT emulations
+#'
+#' Summarize the output from global sensitivity analysis boosted regression
+#' trees emulations. Based on function described in Prowse et al 2016. Reads BRT
+#' output saved via emulate_sensitivity
+#' @param resp Which response summary to use (column name from \code{sens.out})
+#' @return List of two dataframes: relative influences, and cross-validation
+#'   deviances, each across different subsample sizes and tree complexities.
+#' @param brt.dir \code{"out/brt/"} Directory with stored boosted regression
+#'   tree output
+#' @keywords parameters, sensitivity, save, output
+#' @export
+
+emulation_summary <- function(resp, brt.dir, siminfo) {
+  library(gbm); library(tidyverse)
+  f <- dir(brt.dir, paste0(resp, "_"))
+  f.i <- str_split_fixed(f, "-", 3)
+  cvDev.df <- tibble(response=resp,
+                     td=f.i[,2],
+                     smp=as.numeric(str_remove(f.i[,3], ".rds")))
+  cvDev.df$Dev <- NA
+  ri.ls <- vector("list", length(f))
+  for(i in seq_along(f)) {
+    brt <- readRDS(paste0(brt.dir, f[i]))
+    # cross validation deviance
+    cvDev.df$Dev[i] <- brt$cv.statistics$deviance.mean
+    # relative influence
+    ri.ls[[i]] <- as_tibble(brt$contributions) %>%
+      mutate(td=cvDev.df$td[i], 
+             smp=cvDev.df$smp[i], 
+             response=cvDev.df$response[i])
+  }
+  ri.df <- bind_rows(ri.ls) %>% 
+    group_by(response, td, smp, var) %>%
+    summarise(rel.inf=sum(rel.inf)) %>% 
+    ungroup %>% group_by(response, td, smp) %>%
+    mutate(rel.inf=rel.inf/sum(rel.inf)) %>%
+    ungroup %>% arrange(desc(td), desc(smp), desc(rel.inf))
+  
+  write_csv(cvDev.df, glue::glue("{brt.dir}\\summaries\\{resp}_cv_{siminfo}.csv"))
+  write_csv(ri.df, glue::glue("{brt.dir}\\summaries\\{resp}_ri_{siminfo}.csv"))
+  return()
+}
+
+
+
+
+
+
 
 
