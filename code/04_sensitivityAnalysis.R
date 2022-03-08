@@ -92,6 +92,8 @@ if(rerun) {
     select(parDraw, param, stage, exposure, val) %>%
     group_by(exposure) %>% group_split()
   walk2(parSets, c(1:3, "NA"), ~write_csv(.x, glue("{sens.dir}{parSets.f}{.y}.csv")))
+} else {
+  parSets <- walk(c(1:3, "NA"), ~read_csv(glue("{sens.dir}{parSets.f}{.x}.csv")))
 }
 
 
@@ -107,7 +109,7 @@ if(rerun) {
 
 if(rerun) {
   library(parallel)
-  cl <- makeCluster(4, outfile="temp\\sensitivity_out.txt")
+  cl <- makeCluster(12, outfile="temp\\sensitivity_out.txt")
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df")
   obj.include <- ls()
   
@@ -115,7 +117,7 @@ if(rerun) {
   clusterExport(cl, obj.include[-match(obj.exclude, obj.include)])
   Sys.sleep(5)
   cat("Exported. Starting parallel runs.")
-  out.ls <- parLapply(cl, X=1:4, fun=simSensitivityDepthsWithinCell,
+  out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=simSensitivityDepthsWithinCell,
                       grid.i=grid.i, gridRes=gridRes, pars.sens=pars.sens, 
                       lm.fit=lm.fit, lm.mnsd=lm.mnsd, parSets=parSets)
   stopCluster(cl)
@@ -143,33 +145,22 @@ if(reanalyse) {
           pivot_wider(values_from="val", names_from="param"))
   params <- map(parSets, names) %>% unlist %>% unique
   params <- params[params!="parDraw"]
-  for(i in 1:nrow(grid.i)) {
-    siminfo <- str_remove(str_split_fixed(pop.f[i], "pop_", 2)[,2], ".rds")
-    pop.i <- readRDS(pop.f[i]) %>% 
-      left_join(., parSets[[4]]) %>%
-      left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]]) %>%
-      filter(stage=="canopy")
-    resp <- names(pop.i)
-    resp <- resp[!resp %in% c(params, meta.cols)]
-    resp <- grep("_mn|_sd", resp, value=T)
-    for(j in 1:length(resp)) {
-      emulate_sensitivity(pop.i %>% filter(month==7), params, 
-                          resp[j], paste0(sens.dir, "BRTs\\"), glue("{siminfo}_july"))
-      emulation_summary(resp[j], paste0(sens.dir, "BRTs\\"), glue("{siminfo}_july"))
-    }
-    
-    mass.i <- readRDS(mass.f[i]) %>% 
-      left_join(., parSets[[4]]) %>%
-      left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]])
-    resp <- names(mass.i)
-    resp <- resp[!resp %in% c(params, meta.cols)]
-    resp <- grep("_mn|_sd|p_k", resp, value=T)
-    for(j in 1:length(resp)) {
-      emulate_sensitivity(mass.i %>% filter(month==7), params, 
-                          resp[j], paste0(sens.dir, "BRTs\\"), glue("{siminfo}_july"))
-      emulation_summary(resp[j], paste0(sens.dir, "BRTs\\"), glue("{siminfo}_july"))
-    }
-  }
+  
+  library(parallel)
+  cl <- makeCluster(12, outfile="temp\\brt_out.txt")
+  obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df", "lm.fit", "lm.mnsd")
+  obj.include <- ls()
+  
+  cat("Exporting cluster.")
+  clusterExport(cl, obj.include[-match(obj.exclude, obj.include)])
+  Sys.sleep(5)
+  cat("Exported. Starting BRTs.")
+  out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=runBRTs,
+                      pop.f=pop.f, mass.f=mass.f, parSets=parSets,
+                      grid.i=grid.i, meta.cols=meta.cols, params=params,
+                      brt.dir=glue("{sens.dir}\\BRTs\\"))
+  stopCluster(cl)
+  
 }
 
 
@@ -178,6 +169,18 @@ if(reanalyse) {
 
 
 
+ri.df <- dir(glue("{sens.dir}\\BRTs\\summaries\\"), "_ri_", full.names=T) %>%
+  map_dfr(~read_csv(.x, show_col_types=F)) %>% 
+  filter(smp==max(smp), td==max(td))
+
+ggplot(ri.df, aes(var, rel.inf)) + geom_bar(stat="identity") + 
+  facet_wrap(~response) + coord_flip()
+
+ri.df %>% left_join(grid.sf, .) %>% 
+  ggplot(aes(fill=rel.inf)) + 
+  geom_sf(colour=NA) + 
+  scale_fill_viridis_c() + 
+  facet_wrap(~var)
 
 
 
