@@ -795,9 +795,11 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
   library(gbm); library(tidyverse)
   f <- dir(brt.dir, paste0(resp, "_"))
   f.i <- str_split_fixed(f, "-", 3)
+  id <- as.numeric(str_split_fixed(siminfo, "_", 3)[,1])
   cvDev.df <- tibble(response=resp,
                      td=f.i[,2],
-                     smp=as.numeric(str_remove(f.i[,3], ".rds")))
+                     smp=as.numeric(str_remove(f.i[,3], ".rds")),
+                     id=id)
   cvDev.df$Dev <- NA
   ri.ls <- vector("list", length(f))
   for(i in seq_along(f)) {
@@ -815,7 +817,8 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
     summarise(rel.inf=sum(rel.inf)) %>% 
     ungroup %>% group_by(response, td, smp) %>%
     mutate(rel.inf=rel.inf/sum(rel.inf)) %>%
-    ungroup %>% arrange(desc(td), desc(smp), desc(rel.inf))
+    ungroup %>% arrange(desc(td), desc(smp), desc(rel.inf)) %>%
+    mutate(id=id)
   
   write_csv(cvDev.df, glue::glue("{brt.dir}\\summaries\\{resp}_cv_{siminfo}.csv"))
   write_csv(ri.df, glue::glue("{brt.dir}\\summaries\\{resp}_ri_{siminfo}.csv"))
