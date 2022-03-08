@@ -832,3 +832,34 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
 
 
 
+runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params, brt.dir) {
+  library(glue); library(lubridate); library(sf); library(brms)
+  library(lme4); library(glmmTMB); library(tidyverse)
+  siminfo <- str_remove(str_split_fixed(pop.f[x], "pop_", 2)[,2], ".rds")
+  pop.i <- readRDS(pop.f[x]) %>% 
+    left_join(., parSets[[4]]) %>%
+    left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]]) %>%
+    filter(stage=="canopy")
+  resp <- names(pop.i)
+  resp <- resp[!resp %in% c(params, meta.cols)]
+  resp <- grep("_mn|_sd", resp, value=T)
+  for(j in 1:length(resp)) {
+    emulate_sensitivity(pop.i %>% filter(month==7), params, n.sub=2, td=5,
+                        resp[j], brt.dir, glue("{siminfo}_july"))
+    emulation_summary(resp[j], brt.dir, glue("{siminfo}_july"))
+  }
+  
+  mass.i <- readRDS(mass.f[x]) %>%
+    left_join(., parSets[[4]]) %>%
+    left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]])
+  resp <- names(mass.i)
+  resp <- resp[!resp %in% c(params, meta.cols)]
+  resp <- grep("_mn|_sd|p_k", resp, value=T)
+  for(j in 1:length(resp)) {
+    emulate_sensitivity(mass.i %>% filter(month==7), params,
+                        resp[j], brt.dir, glue("{siminfo}_july"))
+    emulation_summary(resp[j], brt.dir, glue("{siminfo}_july"))
+  }
+}
+
+
