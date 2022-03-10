@@ -629,7 +629,7 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim,
 simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens, 
                                            lm.fit, lm.mnsd, parSets) {
   library(glue); library(lubridate); library(sf); library(brms)
-  library(lme4); library(glmmTMB); library(tidyverse)
+  library(Matrix); library(tidyverse)
   
   # setup landscape and parameters
   cell.env <- grid.i[x,]
