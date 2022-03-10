@@ -144,7 +144,8 @@ setParameters <- function(path=NULL,
                           freqHarvest=1e5,
                           harvestTarget=c("all", "stipe", "frond")[1],
                           extraPars=NULL,
-                          stochParams=FALSE
+                          stochParams=FALSE,
+                          stormIntensity=NULL
                           ) {
   
   if(!is.null(path)) {
@@ -160,6 +161,7 @@ setParameters <- function(path=NULL,
       # simulation 
       tmax=tmax,
       stochParams=stochParams,
+      stormIntensity=stormIntensity,
       
       # growth
       growthRateStipeMax=growthRateStipeMax,

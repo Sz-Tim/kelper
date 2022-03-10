@@ -7,7 +7,7 @@
 
 simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   
-  library(tidyverse); library(brms); library(lme4); library(glmmTMB)
+  library(tidyverse); library(brms)
   #---- setup landscape
   env.df <- pars$env %>% 
     mutate(PAR_atDepth=PAR * exp(-KD * pars$depth),
@@ -31,6 +31,17 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
                    growFrond=apply(pars$growthRateFrond, 1, function(x) rep(x[1], pars$tmax)))
   }
   par.yr$surv <- sqrt(par.yr$surv) # annual rates to 1/2 year rates
+  #---- setup storm effects
+  if(is.null(pars$stormIntensity)) {
+    storm_mortality <- rep(0, pars$tmax)
+    storm_loss <- rep(0, pars$tmax)
+  } else {
+    # vector of storm intensities
+    # affects winter survival, loss
+    # should depend on depth...
+    storm_mortality <- pars.sim$storms/max(pars.sim$storms) * 0.5
+    storm_loss <- pars.sim$storms/max(pars.sim$storms) * 0.5
+  }
   
   #---- global parameters
   ## maxStipeLen = maximum expected canopy height
@@ -41,7 +52,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   maxStipeLen <- getPrediction(pars$canopyHeight, ndraws, 
                                env.df %>% summarise(across(.fns=mean)) %>% mutate(location=NA_character_),
                                pars$sc.df$canopyHeight.lm, "maxStipeLen")
-  sizeClassLimits <- maxStipeLen * c(0, 0.2, 0.8, 1)#(0:3)/3
+  sizeClassLimits <- maxStipeLen * c(0, 0.5, 0.999, 1)#(0:3)/3
   sizeClassMdpts <- (sizeClassLimits+lag(sizeClassLimits))[-1]/2
   
   K_N <- pmax(1e-2, getPrediction(pars$N_canopy, ndraws, env.df,
@@ -52,20 +63,17 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   
   
   #---- per capita mass, area by stage
-  logWtStipe.stage <- map(log(sizeClassMdpts),
-                          ~getPrediction(pars$lenSt_to_wtSt, ndraws,
-                                         bind_cols(logLenStipe=.x, env.df),
-                                         pars$sc.df$lenSt_to_wtSt.lm, "logWtStipe")) %>%
+  logWtStipe.stage <- log(sizeClassMdpts) %>%
+    map(~getPrediction(pars$lenSt_to_wtSt, ndraws, bind_cols(logLenStipe=.x, env.df),
+                       pars$sc.df$lenSt_to_wtSt.lm, "logWtStipe")) %>%
     do.call('cbind', .)
-  logWtFrond.stage <- map(log(sizeClassMdpts),
-                          ~getPrediction(pars$lenSt_to_wtFr, ndraws,
-                                         bind_cols(logLenStipe=.x, env.df),
-                                         pars$sc.df$lenSt_to_wtFr.lm, "logWtFrond")) %>%
+  logWtFrond.stage <- log(sizeClassMdpts) %>%
+    map(~getPrediction(pars$lenSt_to_wtFr, ndraws, bind_cols(logLenStipe=.x, env.df),
+                       pars$sc.df$lenSt_to_wtFr.lm, "logWtFrond")) %>%
     do.call('cbind', .)
-  logAreaFrond.stage <- map(log(sizeClassMdpts),
-                          ~getPrediction(pars$wtFr_to_arFr, ndraws,
-                                         bind_cols(logWtFrond=.x, env.df),
-                                         pars$sc.df$wtFr_to_arFr, "logAreaFrond")) %>%
+  logAreaFrond.stage <- log(sizeClassMdpts) %>%
+    map(~getPrediction(pars$wtFr_to_arFr, ndraws, bind_cols(logWtFrond=.x, env.df),
+                       pars$sc.df$wtFr_to_arFr, "logAreaFrond")) %>%
     do.call('cbind', .)
   
   
@@ -97,7 +105,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
 
     # growth
     growRate_i <- par.yr$growStipeMax[year,] * (1-max(kappa[year,season,1])^pars$growthRateDensityShape)
-    prGrowToNext <- growRate_i/(sizeClassLimits-lag(sizeClassLimits))[-1]
+    prGrowToNext <- pmin(1, pmax(0, growRate_i/(sizeClassLimits-lag(sizeClassLimits))[-1]))
     A[[1]][2,1] <- par.yr$surv[year,1]*prGrowToNext[1]
     A[[1]][3,2] <- par.yr$surv[year,2]*prGrowToNext[2]
     # survival
@@ -132,12 +140,12 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
     
     if(year < pars$tmax) {
       # survival
-      diag(A[[2]]) <- par.yr$surv[year,]
+      diag(A[[2]]) <- pmax(0, par.yr$surv[year,] - storm_mortality[year])
       # update population
       N[,year+1,1] <- A[[2]] %*% N[,year,season]
       # reproduction
       N[1,year+1,1] <- par.yr$settlement[year]*(1-max(kappa[year,season,]))
-      FAI[,year+1,1] <- FAI[,year,season] * pmax(0, (diag(A[[2]]) - par.yr$loss[year]))
+      FAI[,year+1,1] <- FAI[,year,season] * pmax(0, diag(A[[2]]) - par.yr$loss[year] - storm_loss[year])
     }
     
   }
@@ -145,7 +153,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   
   # biomass calculation
   biomass <- calcBiomass(N, FAI, logWtStipe.stage, pars$arFr_to_wtFr,
-                         ndraws, env.df, pars$sc.df$arFr_to_wtFr.lm)
+                         ndraws, env.df, pars$sc.df$arFr_to_wtFr.lm, stages=3)
   
   return(list(N=N, FAI=FAI, harvest=harvest, kappa=kappa, K_FAI=K_FAI, K_N=K_N,
               biomass=biomass, PAR=env.df$PAR_atDepth))
