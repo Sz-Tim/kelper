@@ -539,30 +539,28 @@ getPrediction <- function(mod, ndraws, new.df, scale.df, y_var) {
 
 
 
-simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, 
-                              depths, tmax, nSim, gridRes, 
-                              landscape, stochParams,
-                              surv.df, fecund.df, 
-                              lm.fit, lm.mnsd) {
+simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim, 
+                                surv.df, fecund.df, lm.fit, lm.mnsd) {
   library(glue); library(lubridate); library(sf); library(brms)
-  library(lme4); library(glmmTMB); library(tidyverse)
-  if(landscape=="dynamic") {
+  library(Matrix); library(tidyverse)
+  if(pars.sim$landscape=="dynamic") {
     cell.env <- grid.sim %>% st_drop_geometry() %>% filter(id==grid.i$id[x])
   } else {
     cell.env <- grid.i[x,]
   }
-  pop.ls <- mass.ls <- vector("list", length(depths))
-  for(j in 1:length(depths)) {
+  pop.ls <- mass.ls <- vector("list", length(pars.sim$depths))
+  for(j in 1:length(pars.sim$depths)) {
     par_i <- setParameters(
-      tmax=tmax, 
+      tmax=pars.sim$tmax, 
       survRate=cbind(filter(surv.df, exposure==cell.env$fetchCat[1])$survRate,
                      filter(surv.df, exposure==cell.env$fetchCat[1])$rate_sd),
       settlementRate=c(filter(fecund.df, exposure==cell.env$fetchCat[1])$rate_mn,
                        filter(fecund.df, exposure==cell.env$fetchCat[1])$rate_sd),
       lossRate=c(0.2340987, 90.1752),
-      stochParams=stochParams,
+      stochParams=pars.sim$stochParams,
+      stormIntensity=pars.sim$storms,
       extraPars=list(
-        depth=depths[j],
+        depth=pars.sim$depths[j],
         env=cell.env,
         lenSt_to_wtSt=lm.fit$lenSt_to_wtSt.lm,
         lenSt_to_wtFr=lm.fit$lenSt_to_wtFr.lm,
@@ -573,7 +571,8 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL,
         canopyHeight=lm.fit$canopyHeight.lm,
         sc.df=lm.mnsd)
     )
-    out <- map(1:nSim, ~simulatePopulation(par_i, ndraws=ifelse(stochParams, 50, 4e3)))
+    out <- map(1:pars.sim$nSim, 
+               ~simulatePopulation(par_i, ndraws=ifelse(par_i$stochParams, 50, 4e3)))
     pop.ls[[j]] <- imap_dfr(out, 
                             ~tibble(sim=.y, 
                                     year=rep(1:par_i$tmax, 3),
@@ -594,8 +593,8 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL,
       mutate(id=x) %>%
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
-             landscape=landscape,
-             stochParams=stochParams)
+             landscape=par_ilandscape,
+             stochParams=par_istochParams)
     mass.ls[[j]] <- imap_dfr(out,
                              ~tibble(sim=.y,
                                      year=rep(1:par_i$tmax, 3),
@@ -609,8 +608,8 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL,
       mutate(id=x) %>%
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
-             landscape=landscape,
-             stochParams=stochParams)
+             landscape=par_ilandscape,
+             stochParams=par_istochParams)
   }
   sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{landscape}",
                    "_{ifelse(stochParams, 'stochPar', 'optPar')}")
