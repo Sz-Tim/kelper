@@ -80,7 +80,6 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   FAI[,1,1] <- N[,1,1] * exp(logAreaFrond.stage[1,])
   harvest <- rep(0, pars$tmax) 
   kappa <- array(dim=c(pars$tmax, 3, 2))
-  biomass <- matrix(0, nrow=pars$tmax, 3)
   
   
   #---- transition matrices

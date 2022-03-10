@@ -129,21 +129,30 @@ growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, gro
 
 
 
-calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df) {
+calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df, stages=3) {
   stipeMass <- frondMass <- array(0, dim=dim(N))
-  for(stage in 1:3) {
-    for(season in 1:(dim(N)[3])) {
-      frondMass[stage,,season] <- N[stage,,season] * 
-        exp(getPrediction(lmFit, ndraws, 
-                          bind_cols(logAreaFrond=log(FAI[stage,,season]/N[stage,,season]), env.df),
-                          scale.df, "logWtFrond"))
-    }
-  }
+  biomass <- matrix(0, nrow=dim(N)[2], ncol=dim(N)[3])
   for(year in 1:(dim(N)[2])) {
     stipeMass[,year,] <- N[,year,] * exp(lwtStipe[year,])
     
   }
-  return(apply((stipeMass + frondMass), 2:3, sum, na.rm=T)/1e3)
+  for(stage in stages) {
+    for(season in 1:(dim(N)[3])) {
+      frondMass[stage,,season] <- N[stage,,season] * 
+        exp(getPrediction(lmFit, ndraws, 
+                          bind_cols(logAreaFrond=log(FAI[stage,,season]/N[stage,,season]), 
+                                    env.df) %>%
+                            mutate(logAreaFrond=replace_na(logAreaFrond, 0)),
+                          scale.df, "logWtFrond"))
+    }
+  }
+  for(year in 1:(dim(N)[2])) {
+    for(season in 1:(dim(N)[3])) {
+      biomass[year,season] <- stipeMass[stages,year,season] + frondMass[stages,year,season]
+    }
+  }
+  
+  return(biomass/1e3)
 }
 
 
