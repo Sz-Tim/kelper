@@ -30,18 +30,25 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
                    growStipeMax=apply(pars$growthRateStipeMax, 1, function(x) rep(x[1], pars$tmax)),
                    growFrond=apply(pars$growthRateFrond, 1, function(x) rep(x[1], pars$tmax)))
   }
-  par.yr$surv <- sqrt(par.yr$surv) # annual rates to 1/2 year rates
   #---- setup storm effects
   if(is.null(pars$stormIntensity)) {
-    storm_mortality <- rep(0, pars$tmax)
-    storm_loss <- rep(0, pars$tmax)
+    par.yr$surv_storm <- par.yr$surv
   } else {
     # vector of storm intensities
     # affects winter survival, loss
     # should depend on depth...
-    storm_mortality <- pars.sim$storms/max(pars.sim$storms) * 0.5
-    storm_loss <- pars.sim$storms/max(pars.sim$storms) * 0.5
+    par.yr$loss <- qbeta(pnorm(pars.sim$storms, 0, 0.5), 
+                         prod(pars$lossRate), 
+                         (1-pars$lossRate[1])*pars$lossRate[2])
+    par.yr$surv_strm <- apply(pars$survRate, 1, 
+                              function(x) pmax(0, 
+                                               pmin(1, 
+                                                    qnorm(pnorm(-pars.sim$storms, 
+                                                                mean(-pars.sim$storms), 0.5), 
+                                                          x[1], x[2]))))
   }
+  par.yr$surv <- sqrt(par.yr$surv) # annual rates to 1/2 year rates
+  par.yr$surv_strm <- sqrt(par.yr$surv_strm)
   
   #---- global parameters
   ## maxStipeLen = maximum expected canopy height
@@ -140,12 +147,12 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
     
     if(year < pars$tmax) {
       # survival
-      diag(A[[2]]) <- pmax(0, par.yr$surv[year,] - storm_mortality[year])
+      diag(A[[2]]) <- pmax(0, par.yr$surv_strm[year,])
       # update population
       N[,year+1,1] <- A[[2]] %*% N[,year,season]
       # reproduction
       N[1,year+1,1] <- par.yr$settlement[year]*(1-max(kappa[year,season,]))
-      FAI[,year+1,1] <- FAI[,year,season] * pmax(0, diag(A[[2]]) - par.yr$loss[year] - storm_loss[year])
+      FAI[,year+1,1] <- FAI[,year,season] * pmax(0, diag(A[[2]]) - par.yr$loss[year])
     }
     
   }
