@@ -595,8 +595,8 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim,
       mutate(id=x) %>%
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
-             landscape=par_ilandscape,
-             stochParams=par_istochParams)
+             landscape=pars.sim$landscape,
+             stochParams=pars.sim$stochParams)
     mass.ls[[j]] <- imap_dfr(out,
                              ~tibble(sim=.y,
                                      year=rep(1:par_i$tmax, 3),
@@ -610,13 +610,13 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim,
       mutate(id=x) %>%
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
-             landscape=par_ilandscape,
-             stochParams=par_istochParams)
+             landscape=pars.sim$landscape,
+             stochParams=pars.sim$stochParams)
   }
-  sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{landscape}",
-                   "_{ifelse(stochParams, 'stochPar', 'optPar')}")
-  saveRDS(do.call(rbind, pop.ls), glue("out\\pop_{sim.info}.rds"))
-  saveRDS(do.call(rbind, mass.ls), glue("out\\mass_{sim.info}.rds"))
+  sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{pars.sim$landscape}",
+                   "_{ifelse(pars.sim$stochParams, 'stochPar', 'optPar')}")
+  saveRDS(do.call(rbind, pop.ls), glue("out\\storms\\pop_{sim.info}.rds"))
+  saveRDS(do.call(rbind, mass.ls), glue("out\\storms\\mass_{sim.info}.rds"))
   return(x)
 }
 
@@ -762,7 +762,7 @@ emulate_sensitivity <- function(sens.out, params, resp, brt.dir, siminfo,
     for(j in 1:length(td)) {
       td_j <- td[j]
       brt.fit <- dismo::gbm.step(sub.samp, gbm.x=params, gbm.y=resp, 
-                                 max.trees=200000, n.folds=5, 
+                                 max.trees=200000, n.folds=5, learning.rate=0.001,
                                  family="gaussian", tree.complexity=td_j,
                                  bag.fraction=0.8, silent=T, plot.main=F)
       saveRDS(brt.fit, glue::glue("{brt.dir}\\{resp}_{siminfo}_td-{td_j}-{n}.rds"))
