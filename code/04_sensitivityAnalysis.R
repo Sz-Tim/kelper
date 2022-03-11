@@ -25,13 +25,13 @@ sens.dir <- "out\\sensitivity\\"
 parSets.f <- "000_paramSets_exposure_"
 
 # switches & settings
-rerun <- T
+rerun <- F
 reanalyse <- T
 gridRes <- c(0.1, 0.25)[2]
 options(mc.cores=12)
-pars.sens <- list(nParDraws=1e2,
-                  depths=c(2),
-                  tmax=20,
+pars.sens <- list(nParDraws=2e2,
+                  depths=c(2, 15),
+                  tmax=30,
                   tskip=10,
                   nSim=1,
                   stochParams=F, 
@@ -92,8 +92,6 @@ if(rerun) {
     select(parDraw, param, stage, exposure, val) %>%
     group_by(exposure) %>% group_split()
   walk2(parSets, c(1:3, "NA"), ~write_csv(.x, glue("{sens.dir}{parSets.f}{.y}.csv")))
-} else {
-  parSets <- walk(c(1:3, "NA"), ~read_csv(glue("{sens.dir}{parSets.f}{.x}.csv")))
 }
 
 
@@ -108,8 +106,7 @@ if(rerun) {
 ##-- run simulations
 
 if(rerun) {
-  library(parallel)
-  cl <- makeCluster(12, outfile="temp\\sensitivity_out.txt")
+  cl <- makeCluster(10, outfile="temp\\sensitivity_out.txt")
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df")
   obj.include <- ls()
   
@@ -146,13 +143,12 @@ if(reanalyse) {
   params <- map(parSets, names) %>% unlist %>% unique
   params <- params[params!="parDraw"]
   
-  library(parallel)
-  cl <- makeCluster(12, outfile="temp\\brt_out.txt")
+  cl <- makeCluster(10, outfile="temp\\brt_out.txt")
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df", "lm.fit", "lm.mnsd")
   obj.include <- ls()
   
   cat("Exporting cluster.")
-  clusterExport(cl, obj.include[-match(obj.exclude, obj.include)])
+  clusterExport(cl, obj.include[-match(obj.exclude, obj.include, nomatch=0)])
   Sys.sleep(5)
   cat("Exported. Starting BRTs.")
   out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=runBRTs,
@@ -171,17 +167,31 @@ if(reanalyse) {
 
 ri.df <- dir(glue("{sens.dir}\\BRTs\\summaries\\"), "_ri_", full.names=T) %>%
   map_dfr(~read_csv(.x, show_col_types=F)) %>% 
+  group_by(response, id, month, depth) %>% 
   filter(smp==max(smp), td==max(td))
 
-ggplot(ri.df, aes(var, rel.inf)) + geom_bar(stat="identity") + 
-  facet_wrap(~response) + coord_flip()
+ri.df %>% group_by(var, month, depth, response) %>%
+  summarise(rel.inf=mean(rel.inf)) %>%
+  ggplot(aes(var, rel.inf, fill=month)) + 
+  geom_bar(stat="identity", position="dodge") + 
+  facet_grid(depth~response) + coord_flip()
 
-ri.df %>% left_join(grid.sf, .) %>% 
+ri.df %>% filter(response=="biomass_sd", month=="jan") %>%
+  left_join(grid.sf, .) %>% 
   ggplot(aes(fill=rel.inf)) + 
   geom_sf(colour=NA) + 
   scale_fill_viridis_c() + 
-  facet_wrap(~var)
+  facet_grid(depth~var)
 
+ggplot(ri.df, aes(rel.inf, colour=depth, linetype=response)) + 
+  geom_density() + 
+  facet_grid(month~var, scales="free_y")
+
+
+ri.df %>% 
+  right_join(grid.i, .) %>%
+  ggplot(aes(fetch, rel.inf, colour=paste(month, depth))) + geom_point(shape=1) + 
+  facet_grid(response~var)
 
 
 
