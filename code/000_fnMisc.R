@@ -794,14 +794,18 @@ emulate_sensitivity <- function(sens.out, params, resp, brt.dir, siminfo,
 
 emulation_summary <- function(resp, brt.dir, siminfo) {
   library(gbm); library(tidyverse)
-  f <- dir(brt.dir, paste0(resp, "_"))
+  f <- dir(brt.dir, paste0(resp, "_", siminfo))
   f.i <- str_split_fixed(f, "-", 3)
-  id <- as.numeric(str_split_fixed(siminfo, "_", 3)[,1])
+  id <- as.numeric(str_split_fixed(siminfo, "_", 4)[,1])
+  month <- str_split_fixed(siminfo, "_", 4)[,3]
+  depth <- str_split_fixed(siminfo, "_", 4)[,4]
   cvDev.df <- tibble(response=resp,
                      td=f.i[,2],
                      smp=as.numeric(str_remove(f.i[,3], ".rds")),
-                     id=id)
-  cvDev.df$Dev <- NA
+                     id=id,
+                     month=month,
+                     depth=depth,
+                     Dev=NA)
   ri.ls <- vector("list", length(f))
   for(i in seq_along(f)) {
     brt <- readRDS(paste0(brt.dir, f[i]))
@@ -819,7 +823,9 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
     ungroup %>% group_by(response, td, smp) %>%
     mutate(rel.inf=rel.inf/sum(rel.inf)) %>%
     ungroup %>% arrange(desc(td), desc(smp), desc(rel.inf)) %>%
-    mutate(id=id)
+    mutate(id=id,
+           month=month,
+           depth=depth)
   
   write_csv(cvDev.df, glue::glue("{brt.dir}\\summaries\\{resp}_cv_{siminfo}.csv"))
   write_csv(ri.df, glue::glue("{brt.dir}\\summaries\\{resp}_ri_{siminfo}.csv"))
@@ -833,33 +839,27 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
 
 
 
-runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params, brt.dir) {
-  library(glue); library(lubridate); library(sf); library(brms)
-  library(lme4); library(glmmTMB); library(tidyverse)
+runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params, brt.dir, resp=NULL) {
+  library(glue); library(tidyverse)
   siminfo <- str_remove(str_split_fixed(pop.f[x], "pop_", 2)[,2], ".rds")
-  pop.i <- readRDS(pop.f[x]) %>% 
-    left_join(., parSets[[4]]) %>%
-    left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]]) %>%
-    filter(stage=="canopy")
-  resp <- names(pop.i)
-  resp <- resp[!resp %in% c(params, meta.cols)]
-  resp <- grep("_mn|_sd", resp, value=T)
-  for(j in 1:length(resp)) {
-    emulate_sensitivity(pop.i %>% filter(month==7), params, n.sub=2, td=5,
-                        resp[j], brt.dir, glue("{siminfo}_july"))
-    emulation_summary(resp[j], brt.dir, glue("{siminfo}_july"))
-  }
-  
   mass.i <- readRDS(mass.f[x]) %>%
     left_join(., parSets[[4]]) %>%
-    left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]])
-  resp <- names(mass.i)
-  resp <- resp[!resp %in% c(params, meta.cols)]
-  resp <- grep("_mn|_sd|p_k", resp, value=T)
+    left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]]) %>%
+    group_by(depth) %>%
+    group_split()
+  depths <- map_dbl(mass.i, ~.x$depth[1])
+  if(is.null(resp)) {
+    resp <- c("biomass_mn", "biomass_sd")
+  }
   for(j in 1:length(resp)) {
-    emulate_sensitivity(mass.i %>% filter(month==7), params,
-                        resp[j], brt.dir, glue("{siminfo}_july"))
-    emulation_summary(resp[j], brt.dir, glue("{siminfo}_july"))
+    for(k in 1:length(depths)) {
+      emulate_sensitivity(mass.i[[k]] %>% filter(month==1), params, n.sub=2, td=3,
+                          resp[j], brt.dir, glue("{siminfo}_jan_{depths[k]}m"))
+      emulate_sensitivity(mass.i[[k]] %>% filter(month==7), params, n.sub=2, td=3,
+                          resp[j], brt.dir, glue("{siminfo}_july_{depths[k]}m"))
+      try(emulation_summary(resp[j], brt.dir, glue("{siminfo}_jan_{depths[k]}m")))
+      try(emulation_summary(resp[j], brt.dir, glue("{siminfo}_july_{depths[k]}m")))
+    }
   }
 }
 
