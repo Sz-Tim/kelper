@@ -11,7 +11,7 @@
 ##-- set up
 
 # libraries and local functions
-pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "lme4", "brms")
+pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw())
@@ -22,11 +22,11 @@ supp.f <- "..\\data\\collab\\collab_all.xlsx"
 
 # switches & settings
 gridRes <- c(0.1, 0.25)[2]
-stochParams <- T
-landscape <- c("static", "dynamic")[1]
-depths <- c(2, 10, 20)
-tmax <- 20
-nSim <- 10
+pars.sim <- list(tmax=20,
+                 nSim=1,
+                 depths=c(2, 10, 20),
+                 landscape=c("static", "dynamic")[1],
+                 stochParams=F)
 options(mc.cores=12)
 
 # load files
@@ -47,7 +47,7 @@ fecund.df <- data.ls$stageFrom_stageTo %>%
 
 # simulate landscapes if needed
 set.seed(789)
-if(landscape=="dynamic") {
+if(pars.sim$landscape=="dynamic") {
   covars.full <- loadCovariates_full(loadFile="data\\covarFull_ls.rds")
   grid.sim <- grid.sf %>% select(id) %>%
     simulateLandscape(covars.full$sstDayGrow, tmax, "SST") %>%
@@ -82,9 +82,7 @@ clusterExport(cl, obj.include[-match(obj.exclude, obj.include)])
 Sys.sleep(5)
 cat("Exported. Starting parallel runs.")
 out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=simDepthsWithinCell,
-                    grid.i=grid.i, grid.sim=grid.sim, depths=depths, tmax=tmax, 
-                    nSim=nSim, gridRes=gridRes, 
-                    landscape=landscape, stochParams=stochParams, 
+                    grid.i=grid.i, grid.sim=grid.sim, gridRes=gridRes, 
                     surv.df=surv.df, fecund.df=fecund.df, 
                     lm.fit=lm.fit, lm.mnsd=lm.mnsd)
 stopCluster(cl)
