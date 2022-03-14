@@ -111,7 +111,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
     kappa[year,season,] <- pmin(1, c(FAI[3,year,season]/K_FAI[year], N[3,year,season]/K_N[year]))
 
     # growth
-    growRate_i <- par.yr$growStipeMax[year,] * (1-max(kappa[year,season,1])^pars$growthRateDensityShape)
+    growRate_i <- par.yr$growStipeMax[year,] * (1-kappa[year,season,1]^pars$growthRateDensityShape)
     prGrowToNext <- pmin(1, pmax(0, growRate_i/(sizeClassLimits-lag(sizeClassLimits))[-1]))
     A[[1]][2,1] <- par.yr$surv[year,1]*prGrowToNext[1]
     A[[1]][3,2] <- par.yr$surv[year,2]*prGrowToNext[2]
