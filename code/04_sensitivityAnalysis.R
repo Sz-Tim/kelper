@@ -19,14 +19,14 @@ theme_set(theme_bw())
 
 
 # directories & files
-data.dir <- "..\\data\\digitized\\"
-supp.f <- "..\\data\\collab\\collab_all.xlsx"
+data.dir <- "data\\raw\\digitized\\"
+supp.f <- "data\\raw\\collab\\collab_all.xlsx"
 sens.dir <- "out\\sensitivity\\"
 parSets.f <- "000_paramSets_exposure_"
 
 # switches & settings
 rerun <- F
-reanalyse <- T
+reanalyse <- F
 gridRes <- c(0.1, 0.25)[2]
 options(mc.cores=12)
 pars.sens <- list(nParDraws=2e2,

@@ -19,14 +19,14 @@ theme_set(theme_bw())
 
 
 # directories & files
-data.dir <- "..\\data\\digitized\\"
-supp.f <- "..\\data\\collab\\collab_all.xlsx"
-out.dir <- "..\\out\\storms\\"
+data.dir <- "data\\raw\\digitized\\"
+supp.f <- "data\\raw\\collab\\collab_all.xlsx"
+out.dir <- "out\\storms\\"
 
 # switches & settings
 gridRes <- c(0.1, 0.25)[2]
 options(mc.cores=12)
-pars.sim <- list(depths=c(2, 15), 
+pars.sim <- list(depths=c(2, 5, 15), 
                  tskip=0,
                  nSim=1, 
                  stochParams=F,

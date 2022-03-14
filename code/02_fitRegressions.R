@@ -19,12 +19,12 @@ walk(dir("code", "^00.*R", full.names=T), source)
 options(mc.cores=4)
 
 # switches
-gridRes <- 0.25
+gridRes <- 0.1
 
 # directories
 gis.dir <- "..\\..\\00_gis\\"
-data.dir <- "..\\data\\digitized\\"
-supp.f <- "..\\data\\collab\\collab_all.xlsx"
+data.dir <- "data\\raw\\digitized\\"
+supp.f <- "data\\raw\\collab\\collab_all.xlsx"
 
 # datasets
 grid.sf <- st_read(glue("data\\grid_{gridRes}_MODIS.gpkg")) %>%

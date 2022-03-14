@@ -17,9 +17,9 @@ walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw())
 
 # directories
+data.dir <- "data\\raw\\digitized\\"
+supp.f <- "data\\raw\\collab\\collab_all.xlsx"
 out.dir <- "out\\storms\\"
-data.dir <- "..\\data\\digitized\\"
-supp.f <- "..\\data\\collab\\collab_all.xlsx"
 
 # switches & settings
 gridRes <- 0.25
