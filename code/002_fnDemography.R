@@ -141,9 +141,14 @@ calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df, stage
       frondMass[stage,,season] <- N[stage,,season] * 
         exp(getPrediction(lmFit, ndraws, 
                           bind_cols(logAreaFrond=log(FAI[stage,,season]/N[stage,,season]), 
-                                    env.df) %>%
-                            mutate(logAreaFrond=replace_na(logAreaFrond, 0)),
+                                    env.df),
                           scale.df, "logWtFrond"))
+    }
+  }
+  if(any(is.na(frondMass))) {
+    mass.na <- which(is.na(frondMass), arr.ind=T)
+    for(i in 1:dim(mass.na)[1]) {
+      frondMass[mass.na[i,1], mass.na[i,2], mass.na[i,3]] <- 0
     }
   }
   for(year in 1:(dim(N)[2])) {
