@@ -82,7 +82,8 @@ par.rng <- list(surv=surv.df %>%
                                  valMin=apply(rate_frond, 1, function(x) x[1]-2*x[2]),
                                  valMax=apply(rate_frond, 1, function(x) x[1]+2*x[2])),
                 loss=tibble(valMin=qbeta(0.025, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2]),
-                            valMax=qbeta(0.975, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2]))) %>%
+                            valMax=qbeta(0.975, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2])),
+                densityEffShape=tibble(valMin=0.5, valMax=2)) %>%
   imap_dfr(., ~.x %>% mutate(param=.y))
 
 if(rerun) {
@@ -172,20 +173,22 @@ ri.df <- dir(glue("{sens.dir}\\BRTs\\summaries\\"), "_ri_", full.names=T) %>%
 
 ri.df %>% group_by(var, month, depth, response) %>%
   summarise(rel.inf=mean(rel.inf)) %>%
-  ggplot(aes(var, rel.inf, fill=month)) + 
+  ggplot(aes(var, rel.inf, fill=depth)) + 
   geom_bar(stat="identity", position="dodge") + 
-  facet_grid(depth~response) + coord_flip()
+  facet_grid(month~response) + coord_flip()
 
-ri.df %>% filter(response=="biomass_sd", month=="jan") %>%
+ri.df %>% filter(response=="biomass_mn") %>%
   left_join(grid.sf, .) %>% 
   ggplot(aes(fill=rel.inf)) + 
   geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(depth~var)
+  scale_fill_viridis_c() + theme(axis.text=element_blank()) +
+  facet_grid(depth*month~var)
 
-ggplot(ri.df, aes(rel.inf, colour=depth, linetype=response)) + 
+ri.df %>% filter(response=="biomass_mn") %>%
+  right_join(grid.i, .) %>%
+  ggplot(aes(rel.inf, colour=as.factor(fetchCat))) + 
   geom_density() + 
-  facet_grid(month~var, scales="free_y")
+  facet_wrap(~depth*month*var, scales="free_y", ncol=n_distinct(ri.df$var))
 
 
 ri.df %>% 

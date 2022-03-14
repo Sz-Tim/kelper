@@ -135,7 +135,7 @@ setParameters <- function(path=NULL,
                           growthRateFrond=cbind(c(1787, 2299, 3979)/1e4,
                                                 c(179, 397, 417)/1e4), # m^2/plant/growing season
                           frondAreaMax=5500/1e4,
-                          growthRateDensityShape=0.5,
+                          growthRateDensityShape=2,
                           sizeClassLimits=(1000 * (0:6)/6)[c(1,2,5,7)],
                           survRate=c(0.4, 0.7, 0.9),
                           settlementRate=400,
@@ -640,6 +640,7 @@ simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens,
   loss.draws <- parSets[[4]] %>% filter(param=="loss")
   surv.draws <- parSets[[cell.env$fetchCat]] %>% filter(param=="surv") %>% group_split(parDraw)
   settle.draws <- parSets[[cell.env$fetchCat]] %>% filter(param=="settlement")
+  densShape.draws <- parSets[[4]] %>% filter(param=="densityEffShape")
   
   pop.depth <- mass.depth <- vector("list", length(pars.sens$depths))
   for(j in 1:length(pars.sens$depths)) {
@@ -652,6 +653,7 @@ simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens,
         lossRate=loss.draws$val[k],
         survRate=cbind(surv.draws[[k]]$val),
         settlementRate=settle.draws$val[k],
+        growthRateDensityShape=densShape.draws$val[k],
         stochParams=pars.sens$stochParams,
         extraPars=list(
           depth=pars.sens$depths[j],
