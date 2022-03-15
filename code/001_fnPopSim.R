@@ -59,14 +59,14 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   maxStipeLen <- getPrediction(pars$canopyHeight, ndraws, 
                                env.df %>% summarise(across(.fns=mean)) %>% mutate(location=NA_character_),
                                pars$sc.df$canopyHeight.lm, "maxStipeLen")
-  sizeClassLimits <- maxStipeLen * c(0, 0.5, 0.999, 1)#(0:3)/3
+  sizeClassLimits <- maxStipeLen * c(0, 0.333, 0.75, 1.25)#(0:3)/3
   sizeClassMdpts <- (sizeClassLimits+lag(sizeClassLimits))[-1]/2
   
   K_N <- pmax(1e-2, getPrediction(pars$N_canopy, ndraws, env.df,
                                  pars$sc.df$N_canopy.lm, "N"))
   K_FAI <- pmax(1e-2, getPrediction(pars$FAI, ndraws, env.df,
                                   pars$sc.df$FAI.lm, "FAI"))
-  if(is.null(N0)) N0 <- K_N[1] * c(10,1,1)/2
+  if(is.null(N0)) N0 <- K_N[1] * c(5,2,1)
   
   
   #---- per capita mass, area by stage
