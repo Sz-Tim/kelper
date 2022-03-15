@@ -26,11 +26,12 @@ sens.dir <- glue("out{sep}sensitivity{sep}")
 parSets.f <- glue("000_paramSets_exposure_")
 
 # switches & settings
-rerun <- F
-reanalyse <- F
+rerun <- T
+reanalyse <- T
 gridRes <- c(0.1, 0.25)[2]
-options(mc.cores=12)
-pars.sens <- list(nParDraws=2e2,
+nCores <- 50
+options(mc.cores=nCores)
+pars.sens <- list(nParDraws=1e3,
                   depths=c(2, 15),
                   tmax=30,
                   tskip=10,
@@ -108,7 +109,7 @@ if(rerun) {
 ##-- run simulations
 
 if(rerun) {
-  cl <- makeCluster(10, outfile=glue("temp{sep}sensitivity_out.txt"))
+  cl <- makeCluster(nCores, outfile=glue("temp{sep}sensitivity_out.txt"))
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df")
   obj.include <- ls()
   
@@ -120,6 +121,7 @@ if(rerun) {
                       grid.i=grid.i, gridRes=gridRes, pars.sens=pars.sens, 
                       lm.fit=lm.fit, lm.mnsd=lm.mnsd, parSets=parSets)
   stopCluster(cl)
+  cat("Finished simulations.")
 }
 
 
@@ -145,7 +147,7 @@ if(reanalyse) {
   params <- map(parSets, names) %>% unlist %>% unique
   params <- params[params!="parDraw"]
   
-  cl <- makeCluster(10, outfile=glue("temp{sep}brt_out.txt"))
+  cl <- makeCluster(nCores, outfile=glue("temp{sep}brt_out.txt"))
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df", "lm.fit", "lm.mnsd")
   obj.include <- ls()
   
@@ -158,7 +160,7 @@ if(reanalyse) {
                       grid.i=grid.i, meta.cols=meta.cols, params=params,
                       brt.dir=glue("{sens.dir}{sep}BRTs{sep}"))
   stopCluster(cl)
-  
+  cat("Finished BRTs.")
 }
 
 
