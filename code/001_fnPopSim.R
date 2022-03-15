@@ -32,7 +32,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   }
   #---- setup storm effects
   if(is.null(pars$stormIntensity)) {
-    par.yr$surv_storm <- par.yr$surv
+    par.yr$surv_strm <- par.yr$surv
   } else {
     # vector of storm intensities
     # affects winter survival, loss

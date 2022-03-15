@@ -659,6 +659,7 @@ simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens,
         settlementRate=settle.draws$val[k],
         growthRateDensityShape=densShape.draws$val[k],
         stochParams=pars.sens$stochParams,
+        stormIntensity=pars.sens$storms,
         extraPars=list(
           depth=pars.sens$depths[j],
           env=cell.env,
