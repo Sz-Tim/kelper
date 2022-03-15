@@ -25,7 +25,7 @@ out.dir <- "out\\storms\\"
 
 # switches & settings
 gridRes <- c(0.1, 0.25)[2]
-options(mc.cores=12)
+options(mc.cores=24)
 pars.sim <- list(depths=c(2, 5, 15), 
                  tskip=0,
                  nSim=1, 
@@ -82,7 +82,7 @@ if(pars.sim$landscape=="dynamic") {
 ##-- run simulations
 
 
-cl <- makeCluster(2, outfile="temp\\sim_out.txt")
+cl <- makeCluster(24, outfile="temp\\sim_out.txt")
 obj.exclude <- c("data.ls", "grid.sf")
 obj.include <- ls()
 
