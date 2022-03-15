@@ -12,23 +12,24 @@
 ##-- set up
 
 # libraries and local functions
-pkgs <- c("raster", "lubridate", "tidyverse", "sf")
+pkgs <- c("raster", "lubridate", "tidyverse", "sf", "glue")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
+sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
 # switches
 PAR_datasource <- c("MODIS", "POWER")[1]
 gridRes <- 0.25 # currently in arc-seconds
 
 # directories
-gis.dir <- "..\\..\\00_gis\\"
+gis.dir <- glue("..{sep}..{sep}00_gis{sep}")
 
 # maximum extent for covariates
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 
 # datasets
-# covarsFull.ls <- loadCovariates_full(gis.dir, UK_bbox, saveFile="data\\covarFull_ls.rds")
-covars.ls <- loadCovariates(gis.dir, UK_bbox, loadFile="data\\covar_ls.rds")
+# covarsFull.ls <- loadCovariates_full(gis.dir, UK_bbox, saveFile=glue("data{sep}covarFull_ls.rds"))
+covars.ls <- loadCovariates(gis.dir, UK_bbox, loadFile=glue("data{sep}covar_ls.rds"))
 
 # make grid
 grid.mn <- UK_bbox %>%
@@ -39,5 +40,5 @@ grid.mn <- UK_bbox %>%
   mutate(id=row_number())
 
 # save as gpkg
-st_write(grid.mn, glue::glue("data\\grid_{gridRes}_{PAR_datasource}.gpkg"), append=F)
+st_write(grid.mn, glue("data{sep}grid_{gridRes}_{PAR_datasource}.gpkg"), append=F)
 

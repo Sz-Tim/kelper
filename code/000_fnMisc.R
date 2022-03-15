@@ -545,11 +545,14 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim,
                                 surv.df, fecund.df, lm.fit, lm.mnsd) {
   library(glue); library(lubridate); library(sf); library(brms)
   library(Matrix); library(tidyverse)
+  sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
+  
   if(pars.sim$landscape=="dynamic") {
     cell.env <- grid.sim %>% st_drop_geometry() %>% filter(id==grid.i$id[x])
   } else {
     cell.env <- grid.i[x,]
   }
+  
   pop.ls <- mass.ls <- vector("list", length(pars.sim$depths))
   for(j in 1:length(pars.sim$depths)) {
     par_i <- setParameters(
@@ -615,8 +618,8 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim,
   }
   sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{pars.sim$landscape}",
                    "_{ifelse(pars.sim$stochParams, 'stochPar', 'optPar')}")
-  saveRDS(do.call(rbind, pop.ls), glue("out\\storms\\pop_{sim.info}.rds"))
-  saveRDS(do.call(rbind, mass.ls), glue("out\\storms\\mass_{sim.info}.rds"))
+  saveRDS(do.call(rbind, pop.ls), glue("out{sep}storms{sep}pop_{sim.info}.rds"))
+  saveRDS(do.call(rbind, mass.ls), glue("out{sep}storms{sep}mass_{sim.info}.rds"))
   return(x)
 }
 
@@ -632,6 +635,7 @@ simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens,
                                            lm.fit, lm.mnsd, parSets) {
   library(glue); library(lubridate); library(sf); library(brms)
   library(Matrix); library(tidyverse)
+  sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
   
   # setup landscape and parameters
   cell.env <- grid.i[x,]
@@ -714,9 +718,9 @@ simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens,
   }
   sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}")
   saveRDS(do.call(rbind, pop.depth) %>% mutate(id=x), 
-          glue("out\\sensitivity\\pop_{sim.info}.rds"))
+          glue("out{sep}sensitivity{sep}pop_{sim.info}.rds"))
   saveRDS(do.call(rbind, mass.depth) %>% mutate(id=x), 
-          glue("out\\sensitivity\\mass_{sim.info}.rds"))
+          glue("out{sep}sensitivity{sep}mass_{sim.info}.rds"))
   return(x)
 }
 
@@ -752,6 +756,7 @@ simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens,
 emulate_sensitivity <- function(sens.out, params, resp, brt.dir, siminfo, 
                                 n.sub=10, td=c(1,3,5)) {
   library(tidyverse)
+  sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
   if(!dir.exists(brt.dir)) dir.create(brt.dir)
   sub.prop <- seq(0.75, 1, length.out=n.sub)
   
@@ -767,7 +772,7 @@ emulate_sensitivity <- function(sens.out, params, resp, brt.dir, siminfo,
                                  max.trees=200000, n.folds=5, learning.rate=0.001,
                                  family="gaussian", tree.complexity=td_j,
                                  bag.fraction=0.8, silent=T, plot.main=F)
-      saveRDS(brt.fit, glue::glue("{brt.dir}\\{resp}_{siminfo}_td-{td_j}-{n}.rds"))
+      saveRDS(brt.fit, glue::glue("{brt.dir}{sep}{resp}_{siminfo}_td-{td_j}-{n}.rds"))
     }
   }
   return(paste("Finished emulations of", resp))
@@ -796,6 +801,7 @@ emulate_sensitivity <- function(sens.out, params, resp, brt.dir, siminfo,
 
 emulation_summary <- function(resp, brt.dir, siminfo) {
   library(gbm); library(tidyverse)
+  sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
   f <- dir(brt.dir, paste0(resp, "_", siminfo))
   f.i <- str_split_fixed(f, "-", 3)
   id <- as.numeric(str_split_fixed(siminfo, "_", 4)[,1])
@@ -829,8 +835,8 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
            month=month,
            depth=depth)
   
-  write_csv(cvDev.df, glue::glue("{brt.dir}\\summaries\\{resp}_cv_{siminfo}.csv"))
-  write_csv(ri.df, glue::glue("{brt.dir}\\summaries\\{resp}_ri_{siminfo}.csv"))
+  write_csv(cvDev.df, glue::glue("{brt.dir}{sep}summaries{sep}{resp}_cv_{siminfo}.csv"))
+  write_csv(ri.df, glue::glue("{brt.dir}{sep}summaries{sep}{resp}_ri_{siminfo}.csv"))
   return()
 }
 
@@ -843,6 +849,7 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
 
 runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params, brt.dir, resp=NULL) {
   library(glue); library(tidyverse)
+  sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
   siminfo <- str_remove(str_split_fixed(pop.f[x], "pop_", 2)[,2], ".rds")
   mass.i <- readRDS(mass.f[x]) %>%
     left_join(., parSets[[4]]) %>%

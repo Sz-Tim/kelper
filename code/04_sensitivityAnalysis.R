@@ -16,13 +16,14 @@ pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "brms", "parallel")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw())
+sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
 
 # directories & files
-data.dir <- "data\\raw\\digitized\\"
-supp.f <- "data\\raw\\collab\\collab_all.xlsx"
-sens.dir <- "out\\sensitivity\\"
-parSets.f <- "000_paramSets_exposure_"
+data.dir <- glue("data{sep}raw{sep}digitized{sep}")
+supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
+sens.dir <- glue("out{sep}sensitivity{sep}")
+parSets.f <- glue("000_paramSets_exposure_")
 
 # switches & settings
 rerun <- F
@@ -38,13 +39,13 @@ pars.sens <- list(nParDraws=2e2,
                   landscape="static")
 
 # load files
-grid.sf <- st_read(glue("data\\grid_{gridRes}_MODIS.gpkg"))
+grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg"))
 grid.i <- grid.sf %>% st_drop_geometry() %>%
   rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn) %>%
   select(id, SST, KD, PAR, fetch, fetchCat)
 data.ls <- compileDatasets(data.dir, supp.f)
-lm.fit <- readRDS(glue("data\\fits_{gridRes}.rds"))
-lm.mnsd <- readRDS(glue("data\\dfs_mn_sd_{gridRes}.rds"))
+lm.fit <- readRDS(glue("data{sep}fits_{gridRes}.rds"))
+lm.mnsd <- readRDS(glue("data{sep}dfs_mn_sd_{gridRes}.rds"))
 surv.df <- data.ls$stageFrom_stageTo %>% 
   filter(stageTo=="dead") %>%
   mutate(survRate=1-rate_mn,
@@ -107,7 +108,7 @@ if(rerun) {
 ##-- run simulations
 
 if(rerun) {
-  cl <- makeCluster(10, outfile="temp\\sensitivity_out.txt")
+  cl <- makeCluster(10, outfile=glue("temp{sep}sensitivity_out.txt"))
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df")
   obj.include <- ls()
   
@@ -144,7 +145,7 @@ if(reanalyse) {
   params <- map(parSets, names) %>% unlist %>% unique
   params <- params[params!="parDraw"]
   
-  cl <- makeCluster(10, outfile="temp\\brt_out.txt")
+  cl <- makeCluster(10, outfile=glue("temp{sep}brt_out.txt"))
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df", "lm.fit", "lm.mnsd")
   obj.include <- ls()
   
@@ -155,7 +156,7 @@ if(reanalyse) {
   out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=runBRTs,
                       pop.f=pop.f, mass.f=mass.f, parSets=parSets,
                       grid.i=grid.i, meta.cols=meta.cols, params=params,
-                      brt.dir=glue("{sens.dir}\\BRTs\\"))
+                      brt.dir=glue("{sens.dir}{sep}BRTs{sep}"))
   stopCluster(cl)
   
 }
@@ -166,7 +167,7 @@ if(reanalyse) {
 
 
 
-ri.df <- dir(glue("{sens.dir}\\BRTs\\summaries\\"), "_ri_", full.names=T) %>%
+ri.df <- dir(glue("{sens.dir}{sep}BRTs{sep}summaries{sep}"), "_ri_", full.names=T) %>%
   map_dfr(~read_csv(.x, show_col_types=F)) %>% 
   group_by(response, id, month, depth) %>% 
   filter(smp==max(smp), td==max(td))

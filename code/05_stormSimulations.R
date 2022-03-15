@@ -16,12 +16,12 @@ pkgs <- c("glue", "tidyverse", "sf", "brms", "parallel")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw())
-
+sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
 # directories & files
-data.dir <- "data\\raw\\digitized\\"
-supp.f <- "data\\raw\\collab\\collab_all.xlsx"
-out.dir <- "out\\storms\\"
+data.dir <- glue("data{sep}raw{sep}digitized{sep}")
+supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
+out.dir <- glue("out{sep}storms{sep}")
 
 # switches & settings
 gridRes <- c(0.1, 0.25)[2]
@@ -33,13 +33,13 @@ pars.sim <- list(depths=c(2, 5, 15),
                  landscape="static")
 
 # load files
-grid.sf <- st_read(glue("data\\grid_{gridRes}_MODIS.gpkg"))
+grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg"))
 grid.i <- grid.sf %>% st_drop_geometry() %>%
   rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn) %>%
   select(id, SST, KD, PAR, fetch, fetchCat)
 data.ls <- compileDatasets(data.dir, supp.f)
-lm.fit <- readRDS(glue("data\\fits_{gridRes}.rds"))
-lm.mnsd <- readRDS(glue("data\\dfs_mn_sd_{gridRes}.rds"))
+lm.fit <- readRDS(glue("data{sep}fits_{gridRes}.rds"))
+lm.mnsd <- readRDS(glue("data{sep}dfs_mn_sd_{gridRes}.rds"))
 surv.df <- data.ls$stageFrom_stageTo %>% 
   filter(stageTo=="dead") %>%
   mutate(survRate=1-rate_mn,
@@ -56,7 +56,7 @@ pars.sim$storms <- data.ls$year_stormIndex$stormIndex
 # simulate landscapes if needed
 set.seed(789)
 if(pars.sim$landscape=="dynamic") {
-  covars.full <- loadCovariates_full(loadFile="data\\covarFull_ls.rds")
+  covars.full <- loadCovariates_full(loadFile=glue("data{sep}covarFull_ls.rds"))
   grid.sim <- grid.sf %>% select(id) %>%
     simulateLandscape(covars.full$sstDayGrow, tmax, "SST") %>%
     full_join(., 
@@ -82,7 +82,7 @@ if(pars.sim$landscape=="dynamic") {
 ##-- run simulations
 
 
-cl <- makeCluster(24, outfile="temp\\sim_out.txt")
+cl <- makeCluster(24, outfile=glue("temp{sep}sim_out.txt"))
 obj.exclude <- c("data.ls", "grid.sf")
 obj.include <- ls()
 

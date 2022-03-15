@@ -15,24 +15,25 @@ pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw())
+sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
 # directories
-data.dir <- "data\\raw\\digitized\\"
-supp.f <- "data\\raw\\collab\\collab_all.xlsx"
-out.dir <- "out\\storms\\"
+data.dir <- glue("data{sep}raw{sep}digitized{sep}")
+supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
+out.dir <- glue("out{sep}storms{sep}")
 
 # switches & settings
 gridRes <- 0.25
 
 # load files
-grid.sf <- st_read(glue("data\\grid_{gridRes}_MODIS.gpkg")) %>%
+grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
   select(id, geom, PAR_surface)
 sim.info <- glue("...._{gridRes}")
 pop.f <- dir(out.dir, glue("pop_{sim.info}"), full.names=T)
 pop.df <- map_dfr(pop.f, readRDS)
 mass.f <- dir(out.dir, glue("mass_{sim.info}"), full.names=T)
 mass.df <- map_dfr(mass.f, readRDS)
-obs.ls <- readRDS(glue("data\\dfs_{gridRes}.rds"))
+obs.ls <- readRDS(glue("data{sep}dfs_{gridRes}.rds"))
 
 y_vars <- c("FAI", "N", "biomass", "logN", "logBiomass", "kappa_N", "kappa_FAI")
 x_vars <- c("K_N", "K_FAI", "SST", "KD", "PAR", "PAR_atDepth", "fetch", "fetchCat")
@@ -56,30 +57,22 @@ mass.sum <- mass.df %>%
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
 
 
-saveRDS(pop.df, glue("temp\\pop_df_{gridRes}.rds"))
-saveRDS(mass.df, glue("temp\\mass_df_{gridRes}.rds"))
-saveRDS(pop.sum, glue("temp\\pop_sum_{gridRes}.rds"))
-saveRDS(mass.sum, glue("temp\\mass_sum_{gridRes}.rds"))
+saveRDS(pop.df, glue("temp{sep}pop_df_{gridRes}.rds"))
+saveRDS(mass.df, glue("temp{sep}mass_df_{gridRes}.rds"))
+saveRDS(pop.sum, glue("temp{sep}pop_sum_{gridRes}.rds"))
+saveRDS(mass.sum, glue("temp{sep}mass_sum_{gridRes}.rds"))
 
 
 
 
 
 
-sim.title <- glue("0.25 arc-sec grid")
-grid.sf <- st_read(glue("data\\grid_0.25_MODIS.gpkg")) %>%
+sim.title <- glue("{gridRes} arc-sec grid")
+grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
   select(id, geom, PAR_surface)
-pop.sum <- readRDS("temp\\pop_sum_0.25.rds")
+pop.sum <- readRDS(glue("temp{sep}pop_sum_{gridRes}.rds"))
 pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
-mass.sum <- readRDS("temp\\mass_sum_0.25.rds")
-mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
-
-sim.title <- glue("0.1 arc-sec grid")
-grid.sf <- st_read(glue("data\\grid_0.1_MODIS.gpkg")) %>%
-  select(id, geom, PAR_surface)
-pop.sum <- readRDS("temp\\pop_sum_0.1.rds")
-pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
-mass.sum <- readRDS("temp\\mass_sum_0.1.rds")
+mass.sum <- readRDS(glue("temp{sep}mass_sum_{gridRes}.rds"))
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
 
 
@@ -306,7 +299,7 @@ mass.df %>%
 
 
 
-samp_id <- sample(unique(pop.df$id), 10)
+samp_id <- sample(unique(pop.df$id), 4)
 
 pop.df %>% filter(id %in% samp_id) %>% filter(month==1) %>%
   ggplot(aes(year, N, group=paste(id, fetchCat), colour=fetchCat)) +
@@ -426,22 +419,21 @@ pop.sf <- full_join(grid.sf,
                     by="id")
 anim <- pop.sf %>% 
   ggplot() + geom_sf(aes(fill=N), colour=NA) + 
-  transition_states(year) + ease_aes('cubic-in-out') +
+  transition_states(year+1942) + ease_aes('cubic-in-out') +
   ggtitle(paste0("July canopy abundance: Year {closest_state}")) +
   facet_grid(.~depth) +
   scale_fill_viridis_c() + theme(axis.text=element_blank())
-anim_save(glue("figs\\canopy_N_storms.gif"), 
+anim_save(glue("figs{sep}canopy_N_{gridRes}.gif"), 
           anim, nframes=max(pop.sf$year))
 
-anim <- out.sum.sf %>% filter(stage=="canopy") %>%
-  filter(month==6) %>% filter(year>10) %>%
+anim <- pop.sf %>% 
   ggplot() + geom_sf(aes(fill=FAI), colour=NA) + 
   transition_states(year) + ease_aes('cubic-in-out') +
-  ggtitle(paste0("July FAI abundance at ", 
-                 params$depth, "m: Year {closest_state}")) +
+  ggtitle(paste0("July canopy FAI: Year {closest_state}")) +
+  facet_grid(.~depth) +
   scale_fill_viridis_c() + theme(axis.text=element_blank())
-anim_save(glue("figs\\canopy_FAI_{params$depth}m.gif"), 
-          anim, nframes=params$tmax-10)
+anim_save(glue("figs{sep}canopy_FAI_{gridRes}.gif"), 
+          anim, nframes=max(pop.sf$year))
 
 anim <- mass.sum.sf %>% 
   filter(month==6) %>% filter(year>10) %>%
@@ -450,7 +442,7 @@ anim <- mass.sum.sf %>%
   ggtitle(paste0("July biomass at ", 
                  params$depth, "m: Year {closest_state}")) +
   scale_fill_viridis_c("Biomass\nkg/m2") + theme(axis.text=element_blank())
-anim_save(glue("figs\\biomass_{params$depth}m.gif"),
+anim_save(glue("figs{sep}biomass_{params$depth}m.gif"),
           anim, nframes=params$tmax-10)
 
 anim <- out.sum.sf %>% filter(stage=="canopy") %>%
@@ -459,7 +451,7 @@ anim <- out.sum.sf %>% filter(stage=="canopy") %>%
   transition_states(year) + ease_aes('cubic-in-out') +
   ggtitle(paste0("Mean SST (Jan-Jun): Year {closest_state}")) +
   scale_fill_viridis_c() + theme(axis.text=element_blank())
-anim_save(glue("figs\\SST.gif"), 
+anim_save(glue("figs{sep}SST.gif"), 
           anim, nframes=params$tmax-10)
 
 anim <- out.sum.sf %>% filter(stage=="canopy") %>%
@@ -469,5 +461,5 @@ anim <- out.sum.sf %>% filter(stage=="canopy") %>%
   ggtitle(paste0("Mean PAR (Jan-Jun) at ", 
                  params$depth, "m: Year {closest_state}")) +
   scale_fill_viridis_c() + theme(axis.text=element_blank())
-anim_save(glue("figs\\PAR_{params$depth}m.gif"), 
+anim_save(glue("figs{sep}PAR_{params$depth}m.gif"), 
           anim, nframes=params$tmax-10)

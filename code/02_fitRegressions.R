@@ -17,19 +17,19 @@ pkgs <- c("raster", "glue", "lubridate", "tidyverse", "sf", "lme4", "glmmTMB", "
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 options(mc.cores=4)
+sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
 # switches
 gridRes <- 0.1
 
 # directories
-gis.dir <- "..\\..\\00_gis\\"
-data.dir <- "data\\raw\\digitized\\"
-supp.f <- "data\\raw\\collab\\collab_all.xlsx"
+data.dir <- glue("data{sep}raw{sep}digitized{sep}")
+supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
 
 # datasets
-grid.sf <- st_read(glue("data\\grid_{gridRes}_MODIS.gpkg")) %>%
+grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
   rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn)
-covars.ls <- loadCovariates(loadFile="data\\covar_ls.rds")
+covars.ls <- loadCovariates(loadFile=glue("data{sep}covar_ls.rds"))
 data.ls <- compileDatasets(data.dir, supp.f) %>%
   extractCovarsToDatasets(., grid.sf=grid.sf)
 
@@ -180,11 +180,11 @@ reg.fit$N_canopy.lm <- brm(bf(reg.best$N_canopy.lm[1],
 ########
 ##-- Save output
 
-saveRDS(reg.fit, glue::glue("data\\fits_{gridRes}.rds"))
-saveRDS(reg.best, glue::glue("data\\opt_{gridRes}.rds"))
-saveRDS(dfs.scaled, glue::glue("data\\dfs_scaled_{gridRes}.rds"))
-saveRDS(reg.dfs, glue::glue("data\\dfs_{gridRes}.rds"))
-saveRDS(reg.dfs_mn_sd, glue::glue("data\\dfs_mn_sd_{gridRes}.rds"))
+saveRDS(reg.fit, glue::glue("data{sep}fits_{gridRes}.rds"))
+saveRDS(reg.best, glue::glue("data{sep}opt_{gridRes}.rds"))
+saveRDS(dfs.scaled, glue::glue("data{sep}dfs_scaled_{gridRes}.rds"))
+saveRDS(reg.dfs, glue::glue("data{sep}dfs_{gridRes}.rds"))
+saveRDS(reg.dfs_mn_sd, glue::glue("data{sep}dfs_mn_sd_{gridRes}.rds"))
 
 
 
