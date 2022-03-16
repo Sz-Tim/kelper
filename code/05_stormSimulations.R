@@ -25,12 +25,15 @@ out.dir <- glue("out{sep}storms{sep}")
 
 # switches & settings
 gridRes <- c(0.1, 0.25)[2]
+gridFigs <- T
+gridRemake <- T
+set.seed(789)
 options(mc.cores=42)
 pars.sim <- list(depths=c(2, 5, 10, 15, 20), 
                  tskip=0,
                  nSim=1, 
                  stochParams=F,
-                 landscape="static")
+                 landscape="dynamic")
 
 # load files
 grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg"))
@@ -54,23 +57,153 @@ pars.sim$storms <- data.ls$year_stormIndex$stormIndex
 
 
 # simulate landscapes if needed
-set.seed(789)
 if(pars.sim$landscape=="dynamic") {
-  covars.full <- loadCovariates_full(loadFile=glue("data{sep}covarFull_ls.rds"))
-  grid.sim <- grid.sf %>% select(id) %>%
-    simulateLandscape(covars.full$sstDayGrow, pars.sim$tmax, "SST") %>%
-    full_join(., 
-              simulateLandscape(grid.sf %>% select(id), 
-                                covars.full$KD_mn, pars.sim$tmax, "KD") %>%
-                st_drop_geometry()) %>%
-    full_join(., 
-              simulateLandscape(grid.sf %>% select(id), 
-                                covars.full$PAR_mn, pars.sim$tmax, "PAR") %>%
-                st_drop_geometry()) %>%
-    left_join(., grid.sf %>% st_drop_geometry() %>% select(id, fetch, fetchCat))
-  rm(covars.full)
+  if(gridRemake) {
+    covars.full <- loadCovariates_full(loadFile=glue("data{sep}covarFull_ls.rds"))
+    grid.sim <- grid.sf %>% select(id) %>%
+      simulateLandscape(covars.full$sstDayGrow, pars.sim$tmax, "SST") %>%
+      full_join(., 
+                simulateLandscape(grid.sf %>% select(id), 
+                                  covars.full$KD_mn, pars.sim$tmax, "KD") %>%
+                  st_drop_geometry()) %>%
+      full_join(., 
+                simulateLandscape(grid.sf %>% select(id), 
+                                  covars.full$PAR_mn, pars.sim$tmax, "PAR") %>%
+                  st_drop_geometry()) %>%
+      left_join(., grid.sf %>% st_drop_geometry() %>% select(id, fetch, fetchCat))
+    rm(covars.full)
+    st_write(grid.sim, glue("data{sep}gridSim_{gridRes}_MODIS.gpkg"), append=FALSE)
+  } else {
+   grid.sim <- st_read(glue("data{sep}gridSim_{gridRes}_MODIS.gpkg")) 
+  }
+  
+  if(gridFigs) {
+    w <- 18; h <- 8; dpi <- 200
+    basePlot <- grid.sim %>% 
+      mutate(PAR2=PAR*exp(-KD*2), PAR5=PAR*exp(-KD*5), PAR10=PAR*exp(-KD*10),
+             PAR15=PAR*exp(-KD*15), PAR20=PAR*exp(-KD*20)) %>%
+      ggplot() + facet_wrap(~year, nrow=4) + 
+      theme(axis.text=element_blank(), legend.position="bottom")
+    
+    p <- basePlot + geom_sf(aes(fill=SST), colour=NA) + 
+      scale_fill_viridis_c("", option="C") + ggtitle("SST")
+    ggsave(glue("figs{sep}sim_SST_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (0m)")
+    ggsave(glue("figs{sep}sim_PAR_00m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR2), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (2m)")
+    ggsave(glue("figs{sep}sim_PAR_02m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR5), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (5m)")
+    ggsave(glue("figs{sep}sim_PAR_05m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR10), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (10m)")
+    ggsave(glue("figs{sep}sim_PAR_10m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR15), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (15m)")
+    ggsave(glue("figs{sep}sim_PAR_15m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR20), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (20m)")
+    ggsave(glue("figs{sep}sim_PAR_20m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    
+    basePlotResid <- grid.sim %>% 
+      mutate(PAR2=PAR*exp(-KD*2), PAR5=PAR*exp(-KD*5), PAR10=PAR*exp(-KD*10),
+             PAR15=PAR*exp(-KD*15), PAR20=PAR*exp(-KD*20)) %>%
+      group_by(id) %>%
+      mutate(across(c("SST", starts_with("PAR")), list("resid"=~.x-mean(.x)))) %>%
+      ggplot() + facet_wrap(~year, nrow=4) + scale_fill_gradient2("") +
+      theme(axis.text=element_blank(), legend.position="bottom")
+    
+    p <- basePlotResid + geom_sf(aes(fill=SST_resid), colour=NA) + ggtitle("SST")
+    ggsave(glue("figs{sep}resid_SST_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlotResid + geom_sf(aes(fill=PAR_resid), colour=NA) + ggtitle("PAR (0m)")
+    ggsave(glue("figs{sep}resid_PAR_00m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlotResid + geom_sf(aes(fill=PAR2_resid), colour=NA) + ggtitle("PAR (2m)")
+    ggsave(glue("figs{sep}resid_PAR_02m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlotResid + geom_sf(aes(fill=PAR5_resid), colour=NA) + ggtitle("PAR (5m)")
+    ggsave(glue("figs{sep}resid_PAR_05m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlotResid + geom_sf(aes(fill=PAR10_resid), colour=NA) + ggtitle("PAR (10m)")
+    ggsave(glue("figs{sep}resid_PAR_10m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlotResid + geom_sf(aes(fill=PAR15_resid), colour=NA) + ggtitle("PAR (15m)")
+    ggsave(glue("figs{sep}resid_PAR_15m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlotResid + geom_sf(aes(fill=PAR20_resid), colour=NA) + ggtitle("PAR (20m)")
+    ggsave(glue("figs{sep}resid_PAR_20m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    w <- 6; h <- 8; dpi <- 200
+    p <- ggplot(grid.sf) + geom_sf(aes(fill=fetch), colour=NA) + 
+      scale_fill_viridis_c("", option="B", end=0.9) + ggtitle("Fetch") +
+      theme(axis.text=element_blank(), legend.position="bottom")
+    ggsave(glue("figs{sep}mn_fetch_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- ggplot(grid.sf) + geom_sf(aes(fill=fetchCat), colour=NA) + 
+      scale_fill_viridis_c("", option="B", end=0.9) + ggtitle("Fetch category") +
+      theme(axis.text=element_blank(), legend.position="bottom")
+    ggsave(glue("figs{sep}mn_fetchCat_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    rm(basePlot); rm(basePlotResid); rm(p)
+  }
 } else {
   grid.sim <- NULL
+  
+  if(gridFigs) {
+    w <- 6; h <- 8; dpi <- 200
+    basePlot <- grid.sf %>% 
+      rename(PAR=PAR_mn, SST=sstDay_mn, KD=KD_mn) %>%
+      mutate(PAR2=PAR*exp(-KD*2), PAR5=PAR*exp(-KD*5), PAR10=PAR*exp(-KD*10),
+             PAR15=PAR*exp(-KD*15), PAR20=PAR*exp(-KD*20)) %>%
+      ggplot() + theme(axis.text=element_blank(), legend.position="bottom")
+    
+    p <- basePlot + geom_sf(aes(fill=fetch), colour=NA) + 
+      scale_fill_viridis_c("", option="B", end=0.9) + ggtitle("Fetch")
+    ggsave(glue("figs{sep}mn_fetch_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=fetchCat), colour=NA) + 
+      scale_fill_viridis_c("", option="B", end=0.9) + ggtitle("Fetch category")
+    ggsave(glue("figs{sep}mn_fetchCat_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=SST), colour=NA) + 
+      scale_fill_viridis_c("", option="C") + ggtitle("SST")
+    ggsave(glue("figs{sep}mn_SST_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (0m)")
+    ggsave(glue("figs{sep}mn_PAR_00m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR2), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (2m)")
+    ggsave(glue("figs{sep}mn_PAR_02m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR5), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (5m)")
+    ggsave(glue("figs{sep}mn_PAR_05m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR10), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (10m)")
+    ggsave(glue("figs{sep}mn_PAR_10m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR15), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (15m)")
+    ggsave(glue("figs{sep}mn_PAR_15m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    p <- basePlot + geom_sf(aes(fill=PAR20), colour=NA) + 
+      scale_fill_viridis_c("") + ggtitle("PAR (20m)")
+    ggsave(glue("figs{sep}mn_PAR_20m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  }
+  rm(basePlot); rm(p)
 }
 
 
