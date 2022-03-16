@@ -31,7 +31,7 @@ reanalyse <- T
 gridRes <- c(0.1, 0.25)[2]
 nCores <- 50
 options(mc.cores=nCores)
-pars.sens <- list(nParDraws=1e3,
+pars.sens <- list(nParDraws=5e3,
                   depths=c(2, 15),
                   tmax=30,
                   tskip=10,
@@ -113,15 +113,15 @@ if(rerun) {
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df")
   obj.include <- ls()
   
-  cat("Exporting cluster.")
+  cat("Exporting cluster.\n")
   clusterExport(cl, obj.include[-match(obj.exclude, obj.include)])
   Sys.sleep(5)
-  cat("Exported. Starting parallel runs.")
+  cat("Exported. Starting parallel runs.\n")
   out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=simSensitivityDepthsWithinCell,
                       grid.i=grid.i, gridRes=gridRes, pars.sens=pars.sens, 
                       lm.fit=lm.fit, lm.mnsd=lm.mnsd, parSets=parSets)
   stopCluster(cl)
-  cat("Finished simulations.")
+  cat("Finished simulations.\n")
 }
 
 
@@ -151,16 +151,16 @@ if(reanalyse) {
   obj.exclude <- c("data.ls", "grid.sf", "surv.df", "fecund.df", "lm.fit", "lm.mnsd")
   obj.include <- ls()
   
-  cat("Exporting cluster.")
+  cat("Exporting cluster.\n")
   clusterExport(cl, obj.include[-match(obj.exclude, obj.include, nomatch=0)])
   Sys.sleep(5)
-  cat("Exported. Starting BRTs.")
+  cat("Exported. Starting BRTs.\n")
   out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=runBRTs,
                       pop.f=pop.f, mass.f=mass.f, parSets=parSets,
                       grid.i=grid.i, meta.cols=meta.cols, params=params,
                       brt.dir=glue("{sens.dir}{sep}BRTs{sep}"))
   stopCluster(cl)
-  cat("Finished BRTs.")
+  cat("Finished BRTs.\n")
 }
 
 
@@ -169,35 +169,36 @@ if(reanalyse) {
 
 
 
-ri.df <- dir(glue("{sens.dir}{sep}BRTs{sep}summaries{sep}"), "_ri_", full.names=T) %>%
+dir(glue("{sens.dir}{sep}BRTs{sep}summaries{sep}"), "_ri_", full.names=T) %>%
   map_dfr(~read_csv(.x, show_col_types=F)) %>% 
-  group_by(response, id, month, depth) %>% 
-  filter(smp==max(smp), td==max(td))
+  write_csv(glue("{sens.dir}{sep}RelInf_{gridRes}.csv"))
+#  group_by(response, id, month, depth) %>% 
+#  filter(smp==max(smp), td==max(td))
 
-ri.df %>% group_by(var, month, depth, response) %>%
-  summarise(rel.inf=mean(rel.inf)) %>%
-  ggplot(aes(var, rel.inf, fill=depth)) + 
-  geom_bar(stat="identity", position="dodge") + 
-  facet_grid(month~response) + coord_flip()
+#ri.df %>% group_by(var, month, depth, response) %>%
+#  summarise(rel.inf=mean(rel.inf)) %>%
+#  ggplot(aes(var, rel.inf, fill=depth)) + 
+#  geom_bar(stat="identity", position="dodge") + 
+#  facet_grid(month~response) + coord_flip()
 
-ri.df %>% filter(response=="biomass_mn") %>%
-  left_join(grid.sf, .) %>% 
-  ggplot(aes(fill=rel.inf)) + 
-  geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + theme(axis.text=element_blank()) +
-  facet_grid(depth*month~var)
+#ri.df %>% filter(response=="biomass_mn") %>%
+#  left_join(grid.sf, .) %>% 
+#  ggplot(aes(fill=rel.inf)) + 
+#  geom_sf(colour=NA) + 
+#  scale_fill_viridis_c() + theme(axis.text=element_blank()) +
+#  facet_grid(depth*month~var)
 
-ri.df %>% filter(response=="biomass_mn") %>%
-  right_join(grid.i, .) %>%
-  ggplot(aes(rel.inf, colour=as.factor(fetchCat))) + 
-  geom_density() + 
-  facet_wrap(~depth*month*var, scales="free_y", ncol=n_distinct(ri.df$var))
+#ri.df %>% filter(response=="biomass_mn") %>%
+#  right_join(grid.i, .) %>%
+#  ggplot(aes(rel.inf, colour=as.factor(fetchCat))) + 
+#  geom_density() + 
+#  facet_wrap(~depth*month*var, scales="free_y", ncol=n_distinct(ri.df$var))
 
 
-ri.df %>% 
-  right_join(grid.i, .) %>%
-  ggplot(aes(fetch, rel.inf, colour=paste(month, depth))) + geom_point(shape=1) + 
-  facet_grid(response~var)
+#ri.df %>% 
+#  right_join(grid.i, .) %>%
+#  ggplot(aes(fetch, rel.inf, colour=paste(month, depth))) + geom_point(shape=1) + 
+#  facet_grid(response~var)
 
 
 
