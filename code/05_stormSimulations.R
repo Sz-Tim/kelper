@@ -203,8 +203,9 @@ if(pars.sim$landscape=="dynamic") {
     p <- basePlot + geom_sf(aes(fill=PAR20), colour=NA) + 
       scale_fill_viridis_c("") + ggtitle("PAR (20m)")
     ggsave(glue("figs{sep}mn_PAR_20m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+    
+    rm(basePlot); rm(p)
   }
-  rm(basePlot); rm(p)
 }
 
 
