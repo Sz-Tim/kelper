@@ -25,10 +25,11 @@ out.dir <- glue("out{sep}storms{sep}")
 
 # switches & settings
 gridRes <- c(0.1, 0.25)[2]
-gridFigs <- T
-gridRemake <- T
+gridFigs <- F
+gridRemake <- F
+nCores <- 5
 set.seed(789)
-options(mc.cores=42)
+options(mc.cores=nCores)
 pars.sim <- list(depths=c(2, 5, 10, 15, 20), 
                  tskip=0,
                  nSim=1, 
@@ -215,7 +216,7 @@ if(pars.sim$landscape=="dynamic") {
 ##-- run simulations
 
 
-cl <- makeCluster(42, outfile=glue("temp{sep}sim_out.txt"))
+cl <- makeCluster(nCores, outfile=glue("temp{sep}sim_out.txt"))
 obj.exclude <- c("data.ls", "grid.sf")
 obj.include <- ls()
 
