@@ -54,10 +54,10 @@ mass.sum <- mass.df %>%
                    .fn=list(md=median, mn=mean, sd=sd, min=min, max=max, q90=~quantile(.x, probs=0.9))))
 
 
-saveRDS(pop.df, glue("temp{sep}pop_df_{gridRes}.rds"))
-saveRDS(mass.df, glue("temp{sep}mass_df_{gridRes}.rds"))
-saveRDS(pop.sum, glue("temp{sep}pop_sum_{gridRes}.rds"))
-saveRDS(mass.sum, glue("temp{sep}mass_sum_{gridRes}.rds"))
+saveRDS(pop.df, glue("summaries{sep}pop_df_{gridRes}.rds"))
+saveRDS(mass.df, glue("summaries{sep}mass_df_{gridRes}.rds"))
+saveRDS(pop.sum, glue("summaries{sep}pop_sum_{gridRes}.rds"))
+saveRDS(mass.sum, glue("summaries{sep}mass_sum_{gridRes}.rds"))
 
 
 
