@@ -153,7 +153,7 @@ calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df, stage
   }
   for(year in 1:(dim(N)[2])) {
     for(season in 1:(dim(N)[3])) {
-      biomass[year,season] <- stipeMass[stages,year,season] + frondMass[stages,year,season]
+      biomass[year,season] <- sum(stipeMass[stages,year,season]) + sum(frondMass[stages,year,season])
     }
   }
   
