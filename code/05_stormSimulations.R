@@ -58,14 +58,14 @@ set.seed(789)
 if(pars.sim$landscape=="dynamic") {
   covars.full <- loadCovariates_full(loadFile=glue("data{sep}covarFull_ls.rds"))
   grid.sim <- grid.sf %>% select(id) %>%
-    simulateLandscape(covars.full$sstDayGrow, tmax, "SST") %>%
+    simulateLandscape(covars.full$sstDayGrow, pars.sim$tmax, "SST") %>%
     full_join(., 
               simulateLandscape(grid.sf %>% select(id), 
-                                covars.full$KD_mn, tmax, "KD") %>%
+                                covars.full$KD_mn, pars.sim$tmax, "KD") %>%
                 st_drop_geometry()) %>%
     full_join(., 
               simulateLandscape(grid.sf %>% select(id), 
-                                covars.full$PAR_mn, tmax, "PAR") %>%
+                                covars.full$PAR_mn, pars.sim$tmax, "PAR") %>%
                 st_drop_geometry()) %>%
     left_join(., grid.sf %>% st_drop_geometry() %>% select(id, fetch, fetchCat))
   rm(covars.full)
