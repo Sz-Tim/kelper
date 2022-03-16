@@ -43,8 +43,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
     par.yr$surv_strm <- apply(pars$survRate, 1, 
                               function(x) pmax(0, 
                                                pmin(1, 
-                                                    qnorm(pnorm(-pars.sim$storms, 
-                                                                mean(-pars.sim$storms), 1), 
+                                                    qnorm(pnorm(-pars.sim$storms, 0, 1), 
                                                           x[1], x[2]))))
   }
   par.yr$surv <- sqrt(par.yr$surv) # annual rates to 1/2 year rates
