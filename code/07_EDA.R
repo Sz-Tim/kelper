@@ -32,6 +32,47 @@ gridRes <- 0.1
 
 
 
+# regressions -------------------------------------------------------------
+
+
+out.eff <- map(out, conditional_effects)
+
+ggpubr::ggarrange(plotlist=plot(out.eff[[1]], ask=F, points=T, plot=F), 
+                  nrow=1, widths=c(1,1,1.2))
+ggsave("figs/condEff_1.pdf", width=12, height=4)
+
+ggpubr::ggarrange(plotlist=plot(out.eff[[2]], ask=F, points=T, plot=F), 
+                  nrow=1, widths=c(1,1,1.2))
+ggsave("figs/condEff_2.pdf", width=12, height=4)
+
+ggpubr::ggarrange(plotlist=plot(out.eff[[3]], ask=F, points=T, plot=F), 
+                  nrow=1, widths=c(1,1,1.2))
+ggsave("figs/condEff_4.pdf", width=12, height=4)
+
+ggpubr::ggarrange(plotlist=plot(out.eff[[4]], ask=F, points=T, plot=F), 
+                  nrow=1, widths=c(1,1,1.2))
+ggsave("figs/condEff_3.pdf", width=12, height=4)
+
+ggpubr::ggarrange(plotlist=plot(out.eff[[5]], ask=F, points=T, plot=F))
+ggsave("figs/condEff_5.pdf", width=4, height=4)
+
+ggpubr::ggarrange(plotlist=plot(out.eff[[6]], ask=F, points=T, plot=F), 
+                  nrow=1)
+ggsave("figs/condEff_6.pdf", width=8, height=4)
+
+ggpubr::ggarrange(
+  plotlist=plot(conditional_effects(out[[7]], 
+                                    effects=c("PAR_atDepth", "SST", "fetch")), ask=F,
+                points=T, plot=F),
+  nrow=1)
+ggsave("figs/condEff_7a.pdf", width=12, height=4)
+ggpubr::ggarrange(
+  plotlist=plot(conditional_effects(out[[7]], 
+                                    effects=c("PAR_atDepth:SST", "PAR_atDepth:fetch")), ask=F, 
+                points=T, plot=F),
+  nrow=1)
+ggsave("figs/condEff_7b.pdf", width=9, height=4)
+
 
 
 
