@@ -60,8 +60,8 @@ reg.best <- list(
   # Bekkby 2014, ref therein: stouter to resist waves
   lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * fetch + ( 1 | location )",
   # Kain 1963: wtFrond ~ -depth; Smith 2021: wtFrond ~ depth*region
-  lenSt_to_wtFr.lm=paste("logWtFrond ~ logLenStipe + PAR_atDepth:logLenStipe +", 
-                         "SST + SST:logLenStipe + ( 1 | location )"),
+  lenSt_to_wtFr.lm=paste("logWtFrond ~ logLenStipe + PAR_atDepth + PAR_atDepth:logLenStipe +", 
+                         "SST + SST:PAR_atDepth + ( 1 | location )"),
   # Kain 1977: deeper water = thinner fronds; slope ~ depth
   wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PAR_atDepth",
   # Kain 1977: deeper water = thinner fronds; slope ~ depth
