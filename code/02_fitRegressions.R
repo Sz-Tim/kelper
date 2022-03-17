@@ -13,14 +13,14 @@
 ##-- set up
 
 # libraries and local functions
-pkgs <- c("raster", "glue", "lubridate", "tidyverse", "sf", "lme4", "glmmTMB", "brms")
+pkgs <- c("raster", "glue", "lubridate", "tidyverse", "sf", "brms")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 options(mc.cores=4)
 sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
 # switches
-gridRes <- 0.1
+gridRes <- 0.25
 
 # directories
 data.dir <- glue("data{sep}raw{sep}digitized{sep}")
