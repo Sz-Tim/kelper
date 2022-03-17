@@ -27,14 +27,14 @@ out.dir <- glue("out{sep}storms{sep}")
 gridRes <- c(0.1, 0.25)[2]
 gridFigs <- F
 gridRemake <- F
-nCores <- 5
+nCores <- 20
 set.seed(789)
 options(mc.cores=nCores)
 pars.sim <- list(depths=c(2, 5, 10, 15, 20), 
                  tskip=0,
                  nSim=1, 
                  stochParams=F,
-                 landscape="dynamic")
+                 landscape="static")
 
 # load files
 grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg"))
