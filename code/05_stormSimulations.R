@@ -8,8 +8,8 @@
 
 
 
-########
-##-- set up
+# set up ------------------------------------------------------------------
+
 
 # libraries and local functions
 pkgs <- c("glue", "tidyverse", "sf", "brms", "parallel")
@@ -213,8 +213,9 @@ if(pars.sim$landscape=="dynamic") {
 
 
 
-########
-##-- run simulations
+
+
+# run simulations ---------------------------------------------------------
 
 
 cl <- makeCluster(nCores, outfile=glue("temp{sep}sim_out.txt"))

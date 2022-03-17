@@ -5,6 +5,12 @@
 
 # Miscellaneous helper functions associated with the KELPER project
 
+
+
+
+# data preparation --------------------------------------------------------
+
+
 compileDatasets <- function(data.dir, supp.f=NULL) {
   
   library(tidyverse)
@@ -95,106 +101,6 @@ compileDatasets <- function(data.dir, supp.f=NULL) {
 }
 
 
-
-
-
-
-
-#' Generate list of parameters for simulations
-#' 
-#' All rates must already be scaled to the timeframe of the transition matrix (e.g., growth rate for the season rather than daily).
-#'
-#' @param path Path to .rds file with stored parameters; if \code{NULL}, creates list instead
-#' @param override If `path` is not NULL, named list of parameters to override (e.g., \code{list(N_stages=2)})
-#' @param N_stages Number of stages
-#' @param N_seasons Number of seasons per year
-#' @param tmax Number of years
-#' @param growthRateStipeMax Vector of maximum stipe growth rates during spring
-#' @param growthRateFrond Vector of maximum frond area growth rates during spring 
-#' @param frondAreaMax Carrying capacity for Frond Area Index
-#' @param growthRateStipeDensityShape Shape parameter for stipe growth density dependence
-#' @param sizeClassLimits $\delta$ Size limits between stages
-#' @param survRate $\s$ Survival rate
-#' @param settlementRateBg Background recruit settlement rate
-#' @param lossRate Vector of frond loss rates during winter
-#' @param prFullHarvest Proportion of population to be harvested in full
-#' @param freqHarvest Harvest frequency (years)
-#' @param harvestTarget Kelp part for biomass calculation (all, stipe, frond)
-#' @param extraPars Any additional parameters to include (e.g., regressions)
-#'
-#' @return
-#' @export
-#'
-#' @examples
-setParameters <- function(path=NULL,
-                          override=NULL,
-                          tmax=20,
-                          growthRateStipeMax=cbind(c(194, 195, 58),
-                                                   c(23, 21, 10)), # Kain 1976
-                          # growthRateStipeMax=c(74, 74, 29), # Rinde & Sjotun 2005 southern pop
-                          growthRateFrond=cbind(c(1787, 2299, 3979)/1e4,
-                                                c(179, 397, 417)/1e4), # m^2/plant/growing season
-                          frondAreaMax=5500/1e4,
-                          growthRateDensityShape=2,
-                          sizeClassLimits=(1000 * (0:6)/6)[c(1,2,5,7)],
-                          survRate=c(0.4, 0.7, 0.9),
-                          settlementRate=400,
-                          lossRate=0.2345,
-                          prFullHarvest=0,
-                          freqHarvest=1e5,
-                          harvestTarget=c("all", "stipe", "frond")[1],
-                          extraPars=NULL,
-                          stochParams=FALSE,
-                          stormIntensity=NULL
-                          ) {
-  
-  if(!is.null(path)) {
-    pars <- readRDS(path)
-    if(!is.null(override)) {
-      for(i in seq_along(override)) {
-        pars[names(override)[i]] <- override[i]
-      }
-    }
-  } else {
-    pars <- list(
-      
-      # simulation 
-      tmax=tmax,
-      stochParams=stochParams,
-      stormIntensity=stormIntensity,
-      
-      # growth
-      growthRateStipeMax=growthRateStipeMax,
-      growthRateFrond=growthRateFrond,
-      frondAreaMax=frondAreaMax,
-      growthRateDensityShape=growthRateDensityShape,
-      sizeClassLimits=sizeClassLimits,
-      sizeClassMdpts=(sizeClassLimits+lag(sizeClassLimits))[-1]/2,
-      
-      # survival
-      survRate=survRate,
-      
-      # settlement
-      settlementRate=settlementRate,
-      
-      # loss
-      lossRate=lossRate,
-      
-      # harvest
-      prFullHarvest=prFullHarvest,
-      freqHarvest=freqHarvest,
-      harvestTarget=harvestTarget
-    ) 
-  }
-  
-  if(!is.null(extraPars)) {
-    for(i in seq_along(extraPars)) {
-      pars[names(extraPars)[i]] <- extraPars[i]
-    }
-  }
-  
-  return(pars)
-}
 
 
 
@@ -473,6 +379,112 @@ extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
 
 
 
+
+
+# simulation preparation -----------------------------------------------
+
+
+#' Generate list of parameters for simulations
+#' 
+#' All rates must already be scaled to the timeframe of the transition matrix (e.g., growth rate for the season rather than daily).
+#'
+#' @param path Path to .rds file with stored parameters; if \code{NULL}, creates list instead
+#' @param override If `path` is not NULL, named list of parameters to override (e.g., \code{list(N_stages=2)})
+#' @param N_stages Number of stages
+#' @param N_seasons Number of seasons per year
+#' @param tmax Number of years
+#' @param growthRateStipeMax Vector of maximum stipe growth rates during spring
+#' @param growthRateFrond Vector of maximum frond area growth rates during spring 
+#' @param frondAreaMax Carrying capacity for Frond Area Index
+#' @param growthRateStipeDensityShape Shape parameter for stipe growth density dependence
+#' @param sizeClassLimits $\delta$ Size limits between stages
+#' @param survRate $\s$ Survival rate
+#' @param settlementRateBg Background recruit settlement rate
+#' @param lossRate Vector of frond loss rates during winter
+#' @param prFullHarvest Proportion of population to be harvested in full
+#' @param freqHarvest Harvest frequency (years)
+#' @param harvestTarget Kelp part for biomass calculation (all, stipe, frond)
+#' @param extraPars Any additional parameters to include (e.g., regressions)
+#'
+#' @return
+#' @export
+#'
+#' @examples
+setParameters <- function(path=NULL,
+                          override=NULL,
+                          tmax=20,
+                          growthRateStipeMax=cbind(c(194, 195, 58),
+                                                   c(23, 21, 10)), # Kain 1976
+                          # growthRateStipeMax=c(74, 74, 29), # Rinde & Sjotun 2005 southern pop
+                          growthRateFrond=cbind(c(1787, 2299, 3979)/1e4,
+                                                c(179, 397, 417)/1e4), # m^2/plant/growing season
+                          frondAreaMax=5500/1e4,
+                          growthRateDensityShape=2,
+                          sizeClassLimits=(1000 * (0:6)/6)[c(1,2,5,7)],
+                          survRate=c(0.4, 0.7, 0.9),
+                          settlementRate=400,
+                          lossRate=0.2345,
+                          prFullHarvest=0,
+                          freqHarvest=1e5,
+                          harvestTarget=c("all", "stipe", "frond")[1],
+                          extraPars=NULL,
+                          stochParams=FALSE,
+                          stormIntensity=NULL
+) {
+  
+  if(!is.null(path)) {
+    pars <- readRDS(path)
+    if(!is.null(override)) {
+      for(i in seq_along(override)) {
+        pars[names(override)[i]] <- override[i]
+      }
+    }
+  } else {
+    pars <- list(
+      
+      # simulation 
+      tmax=tmax,
+      stochParams=stochParams,
+      stormIntensity=stormIntensity,
+      
+      # growth
+      growthRateStipeMax=growthRateStipeMax,
+      growthRateFrond=growthRateFrond,
+      frondAreaMax=frondAreaMax,
+      growthRateDensityShape=growthRateDensityShape,
+      sizeClassLimits=sizeClassLimits,
+      sizeClassMdpts=(sizeClassLimits+lag(sizeClassLimits))[-1]/2,
+      
+      # survival
+      survRate=survRate,
+      
+      # settlement
+      settlementRate=settlementRate,
+      
+      # loss
+      lossRate=lossRate,
+      
+      # harvest
+      prFullHarvest=prFullHarvest,
+      freqHarvest=freqHarvest,
+      harvestTarget=harvestTarget
+    ) 
+  }
+  
+  if(!is.null(extraPars)) {
+    for(i in seq_along(extraPars)) {
+      pars[names(extraPars)[i]] <- extraPars[i]
+    }
+  }
+  
+  return(pars)
+}
+
+
+
+
+
+
 simulateLandscape <- function(grid.sf, var.sf, nYr, colName) {
   # grid.sf: base grid
   # var.sf: variable
@@ -514,31 +526,12 @@ simulateLandscape <- function(grid.sf, var.sf, nYr, colName) {
 
 
 
-getPrediction <- function(mod, ndraws, new.df, scale.df, y_var) {
-  # center and scale predictors to match regression inputs
-  for(i in 1:ncol(new.df)) {
-    if(is.numeric(new.df[[i]])) {
-      scale.row <- which(scale.df$Par==names(new.df)[i])
-      new.df[[i]] <- (new.df[[i]] - scale.df$ctr[scale.row])/scale.df$scl[scale.row]
-    }
-  }
-  
-  pred <- colMeans(posterior_epred(mod, newdata=new.df, ndraws=ndraws, re.form=NA))
-  
-  # de-center and de-scale predictions to natural scale
-  if(y_var != "N") {
-    scale.row <- which(scale.df$Par==y_var)
-    pred <- pred * scale.df$scl[scale.row] + scale.df$ctr[scale.row] 
-  }
-  return(pred)
-}
 
 
 
 
 
-
-
+# simulation wrappers -----------------------------------------------------
 
 
 simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim, 
@@ -733,6 +726,14 @@ simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens,
 
 
 
+
+
+
+
+
+
+
+# sensitivity analysis ----------------------------------------------------
 
 
 #' Emulate global sensitivity analysis output

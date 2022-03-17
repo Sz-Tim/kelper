@@ -8,9 +8,8 @@
 
 
 
-####----------------------------------------------------------------------------
-# Allometry
-####----------------------------------------------------------------------------
+
+# allometry ---------------------------------------------------------------
 
 
 #' Convert between metrics of kelp size 
@@ -54,9 +53,8 @@ convertAllometry <- function(orig, beta_mn, shape="linear",
 
 
 
-####----------------------------------------------------------------------------
-# Growth, breakage, & herbivory
-####----------------------------------------------------------------------------
+
+# growth & loss -----------------------------------------------------------
 
 
 #' Calculate growth rate based on size 
@@ -129,47 +127,12 @@ growFrondArea <- function(FAI_orig, N_orig, A.mx, kappa, logAreaFrond.stage, gro
 
 
 
-calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df, stages=3) {
-  stipeMass <- frondMass <- array(0, dim=dim(N))
-  biomass <- matrix(0, nrow=dim(N)[2], ncol=dim(N)[3])
-  for(year in 1:(dim(N)[2])) {
-    stipeMass[,year,] <- N[,year,] * exp(lwtStipe[year,])
-    
-  }
-  for(stage in stages) {
-    for(season in 1:(dim(N)[3])) {
-      frondMass[stage,,season] <- N[stage,,season] * 
-        exp(getPrediction(lmFit, ndraws, 
-                          bind_cols(logAreaFrond=log(FAI[stage,,season]/N[stage,,season]), 
-                                    env.df),
-                          scale.df, "logWtFrond"))
-    }
-  }
-  if(any(is.na(frondMass))) {
-    mass.na <- which(is.na(frondMass), arr.ind=T)
-    for(i in 1:dim(mass.na)[1]) {
-      frondMass[mass.na[i,1], mass.na[i,2], mass.na[i,3]] <- 0
-    }
-  }
-  for(year in 1:(dim(N)[2])) {
-    for(season in 1:(dim(N)[3])) {
-      biomass[year,season] <- sum(stipeMass[stages,year,season]) + sum(frondMass[stages,year,season])
-    }
-  }
-  
-  return(biomass/1e3)
-}
 
 
 
 
 
-
-
-
-####----------------------------------------------------------------------------
-# Survival & mortality
-####----------------------------------------------------------------------------
+# survival ----------------------------------------------------------------
 
 
 #' Calculate mortality rate: linear with density
@@ -221,4 +184,75 @@ mortDens <- function(propOccupiedSpace, mu0, mu1, linear) {
     pmax(0, mu0 + mu1*(1 - 4*(propOccupiedSpace - 0.5)^2))
   }
 }
+
+
+
+
+
+
+
+
+# miscellaneous -----------------------------------------------------------
+
+
+
+calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df, stages=3) {
+  stipeMass <- frondMass <- array(0, dim=dim(N))
+  biomass <- matrix(0, nrow=dim(N)[2], ncol=dim(N)[3])
+  for(year in 1:(dim(N)[2])) {
+    stipeMass[,year,] <- N[,year,] * exp(lwtStipe[year,])
+    
+  }
+  for(stage in stages) {
+    for(season in 1:(dim(N)[3])) {
+      frondMass[stage,,season] <- N[stage,,season] * 
+        exp(getPrediction(lmFit, ndraws, 
+                          bind_cols(logAreaFrond=log(FAI[stage,,season]/N[stage,,season]), 
+                                    env.df),
+                          scale.df, "logWtFrond"))
+    }
+  }
+  if(any(is.na(frondMass))) {
+    mass.na <- which(is.na(frondMass), arr.ind=T)
+    for(i in 1:dim(mass.na)[1]) {
+      frondMass[mass.na[i,1], mass.na[i,2], mass.na[i,3]] <- 0
+    }
+  }
+  for(year in 1:(dim(N)[2])) {
+    for(season in 1:(dim(N)[3])) {
+      biomass[year,season] <- sum(stipeMass[stages,year,season]) + sum(frondMass[stages,year,season])
+    }
+  }
+  
+  return(biomass/1e3)
+}
+
+
+
+
+
+
+
+
+
+getPrediction <- function(mod, ndraws, new.df, scale.df, y_var) {
+  # center and scale predictors to match regression inputs
+  for(i in 1:ncol(new.df)) {
+    if(is.numeric(new.df[[i]])) {
+      scale.row <- which(scale.df$Par==names(new.df)[i])
+      new.df[[i]] <- (new.df[[i]] - scale.df$ctr[scale.row])/scale.df$scl[scale.row]
+    }
+  }
+  
+  pred <- colMeans(posterior_epred(mod, newdata=new.df, ndraws=ndraws, re.form=NA))
+  
+  # de-center and de-scale predictions to natural scale
+  if(y_var != "N") {
+    scale.row <- which(scale.df$Par==y_var)
+    pred <- pred * scale.df$scl[scale.row] + scale.df$ctr[scale.row] 
+  }
+  return(pred)
+}
+
+
 

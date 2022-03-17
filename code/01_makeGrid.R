@@ -8,8 +8,9 @@
 
 
 
-########
-##-- set up
+
+
+# set up ------------------------------------------------------------------
 
 # libraries and local functions
 pkgs <- c("raster", "lubridate", "tidyverse", "sf", "glue")
@@ -31,13 +32,22 @@ UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 # covarsFull.ls <- loadCovariates_full(gis.dir, UK_bbox, saveFile=glue("data{sep}covarFull_ls.rds"))
 covars.ls <- loadCovariates(gis.dir, UK_bbox, loadFile=glue("data{sep}covar_ls.rds"))
 
-# make grid
+
+
+
+# generate grid -----------------------------------------------------------
+
 grid.mn <- UK_bbox %>%
   st_make_grid(cellsize=c(gridRes, gridRes)) %>%
   st_sf(id=1:length(.)) %>%
   extractCovarsToGrid(., covars.ls, PAR_datasource) %>%
   filter(!is.na(KD_sd) & !is.na(PAR_surface) & !is.na(fetch)) %>%
   mutate(id=row_number())
+
+
+
+
+# save output -------------------------------------------------------------
 
 # save as gpkg
 st_write(grid.mn, glue("data{sep}grid_{gridRes}_{PAR_datasource}.gpkg"), append=F)

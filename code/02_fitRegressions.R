@@ -9,8 +9,7 @@
 
 
 
-########
-##-- set up
+# set up ------------------------------------------------------------------
 
 # libraries and local functions
 pkgs <- c("raster", "glue", "lubridate", "tidyverse", "sf", "brms")
@@ -39,8 +38,7 @@ data.ls <- compileDatasets(data.dir, supp.f) %>%
 
 
 
-########
-##-- Define equations
+# define equations --------------------------------------------------------
 
 reg.full <- list(
   lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * PAR_atDepth * SST * fetch + (1|location)",
@@ -53,8 +51,6 @@ reg.full <- list(
                 "~ PAR_atDepth * SST * fetch * logSlope + (1|location)")
 )
 
-# Could use model selected by dredge -> AICc, but probably better to take a more
-# thoughtful approach, especially given the limited number of locations
 reg.best <- list(
   # Kain 1963: doesn't change with light conditions 
   # Bekkby 2014, ref therein: stouter to resist waves
@@ -86,8 +82,8 @@ priors <- c(prior(normal(0, 10), class=b),
 
 
 
-########
-##-- Munge datasets
+
+# munge datasets ----------------------------------------------------------
 
 reg.dfs <- vector("list", length(reg.full)) %>% setNames(names(reg.full))
 
@@ -152,8 +148,9 @@ dfs.scaled$N_canopy.lm$N <- reg.dfs$N_canopy.lm$N
 
 
 
-########
-##-- Fit regressions
+
+
+# fit regressions ---------------------------------------------------------
 
 reg.fit <- vector("list", length(reg.best)) %>% setNames(names(reg.best))
 reg.fit$lenSt_to_wtSt.lm <- brm(reg.best$lenSt_to_wtSt.lm, dfs.scaled$lenSt_to_wtSt.lm, 
@@ -177,8 +174,7 @@ reg.fit$N_canopy.lm <- brm(bf(reg.best$N_canopy.lm[1],
 
 
 
-########
-##-- Save output
+# save output -------------------------------------------------------------
 
 saveRDS(reg.fit, glue::glue("data{sep}fits_{gridRes}.rds"))
 saveRDS(reg.best, glue::glue("data{sep}opt_{gridRes}.rds"))

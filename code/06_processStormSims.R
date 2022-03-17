@@ -7,8 +7,8 @@
 
 
 
-########
-##-- set up
+
+# set up ------------------------------------------------------------------
 
 # libraries and local functions
 pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "brms")
@@ -34,6 +34,12 @@ pop.df <- map_dfr(pop.f, readRDS)
 mass.f <- dir(out.dir, glue("mass_{sim.info}"), full.names=T)
 mass.df <- map_dfr(mass.f, readRDS)
 
+
+
+
+
+# summarise output --------------------------------------------------------
+
 y_vars <- c("FAI", "N", "biomass", "logN", "logBiomass", "kappa_N", "kappa_FAI")
 x_vars <- c("K_N", "K_FAI", "SST", "KD", "PAR", "PAR_atDepth", "fetch", "fetchCat")
 sim.title <- glue("{gridRes} arc-sec grid")
@@ -53,6 +59,11 @@ mass.sum <- mass.df %>%
   summarise(across(any_of(c(x_vars, y_vars)), .names="{.col}_{.fn}", 
                    .fn=list(md=median, mn=mean, sd=sd, min=min, max=max, q90=~quantile(.x, probs=0.9))))
 
+
+
+
+
+# save output -------------------------------------------------------------
 
 saveRDS(pop.df, glue("summaries{sep}pop_df_{gridRes}.rds"))
 saveRDS(mass.df, glue("summaries{sep}mass_df_{gridRes}.rds"))
