@@ -8,8 +8,8 @@
 
 
 
-########
-##-- set up
+# set up ------------------------------------------------------------------
+
 
 # libraries and local functions
 pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "brms", "parallel")
@@ -61,8 +61,9 @@ fecund.df <- data.ls$stageFrom_stageTo %>%
 
 
 
-########
-##-- assign parameter values
+
+# assign parameter values -------------------------------------------------
+
 
 # parameter ranges: approximately mean +- 2 sd
 loss_mnPrec <- c(0.2340987, 90.1752) # mn, prec for beta distribution
@@ -105,8 +106,9 @@ if(rerun) {
 
 
 
-########
-##-- run simulations
+
+# run simulations ---------------------------------------------------------
+
 
 if(rerun) {
   cl <- makeCluster(nCores, outfile=glue("temp{sep}sensitivity_out.txt"))
@@ -131,8 +133,10 @@ if(rerun) {
 
 
 
-########
-##-- analyse output
+
+
+# run BRTs ----------------------------------------------------------------
+
 
 if(reanalyse) {
   meta.cols <- c("sim", "month", "stage", "id", "parDraw", "depth",
@@ -169,35 +173,39 @@ if(reanalyse) {
 
 
 
+
+# aggregate RIs -----------------------------------------------------------
+
+
 dir(glue("{sens.dir}{sep}BRTs{sep}summaries{sep}"), "_ri_", full.names=T) %>%
   map_dfr(~read_csv(.x, show_col_types=F)) %>% 
   write_csv(glue("{sens.dir}{sep}RelInf_{gridRes}.csv"))
 #  group_by(response, id, month, depth) %>% 
 #  filter(smp==max(smp), td==max(td))
 
-#ri.df %>% group_by(var, month, depth, response) %>%
+# ri.df %>% group_by(var, month, depth, response) %>%
 #  summarise(rel.inf=mean(rel.inf)) %>%
-#  ggplot(aes(var, rel.inf, fill=depth)) + 
-#  geom_bar(stat="identity", position="dodge") + 
+#  ggplot(aes(var, rel.inf, fill=depth)) +
+#  geom_bar(stat="identity", position="dodge") +
 #  facet_grid(month~response) + coord_flip()
-
-#ri.df %>% filter(response=="biomass_mn") %>%
-#  left_join(grid.sf, .) %>% 
-#  ggplot(aes(fill=rel.inf)) + 
-#  geom_sf(colour=NA) + 
+# 
+# ri.df %>% filter(response=="biomass_mn") %>%
+#  left_join(grid.sf, .) %>%
+#  ggplot(aes(fill=rel.inf)) +
+#  geom_sf(colour=NA) +
 #  scale_fill_viridis_c() + theme(axis.text=element_blank()) +
 #  facet_grid(depth*month~var)
-
-#ri.df %>% filter(response=="biomass_mn") %>%
+# 
+# ri.df %>% filter(response=="biomass_mn") %>%
 #  right_join(grid.i, .) %>%
-#  ggplot(aes(rel.inf, colour=as.factor(fetchCat))) + 
-#  geom_density() + 
+#  ggplot(aes(rel.inf, colour=as.factor(fetchCat))) +
+#  geom_density() +
 #  facet_wrap(~depth*month*var, scales="free_y", ncol=n_distinct(ri.df$var))
-
-
-#ri.df %>% 
+# 
+# 
+# ri.df %>%
 #  right_join(grid.i, .) %>%
-#  ggplot(aes(fetch, rel.inf, colour=paste(month, depth))) + geom_point(shape=1) + 
+#  ggplot(aes(fetch, rel.inf, colour=paste(month, depth))) + geom_point(shape=1) +
 #  facet_grid(response~var)
 
 

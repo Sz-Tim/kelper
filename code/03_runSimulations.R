@@ -7,8 +7,9 @@
 
 
 
-########
-##-- set up
+
+# set up ------------------------------------------------------------------
+
 
 # libraries and local functions
 pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "brms")
@@ -68,8 +69,11 @@ if(pars.sim$landscape=="dynamic") {
 
 
 
-########
-##-- run simulations
+
+
+
+
+# run simulations ---------------------------------------------------------
 
 
 library(parallel)
