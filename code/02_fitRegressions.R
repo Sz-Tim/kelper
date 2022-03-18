@@ -19,7 +19,7 @@ options(mc.cores=4)
 sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
 # switches
-gridRes <- 0.25
+gridRes <- 0.1
 
 # directories
 data.dir <- glue("data{sep}raw{sep}digitized{sep}")
@@ -41,14 +41,14 @@ data.ls <- compileDatasets(data.dir, supp.f) %>%
 # define equations --------------------------------------------------------
 
 reg.full <- list(
-  lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * PAR_atDepth * SST * fetch + (1|location)",
-  lenSt_to_wtFr.lm="logWtFrond ~ logLenStipe * lPAR_atDepth * SST * fetch + (1|location)",
-  wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PAR_atDepth * fetch + SST",
-  arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PAR_atDepth * fetch + SST",
-  canopyHeight.lm="maxStipeLen ~ SST * PAR_atDepth * fetch",
-  FAI.lm="FAI ~ PAR_atDepth * SST * fetch",
-  N_canopy.lm=c("N ~ PAR_atDepth * SST * fetch * logSlope + (1|location)",
-                "~ PAR_atDepth * SST * fetch * logSlope + (1|location)")
+  lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * PAR_atDepth * lPAR_atDepth * SST * fetch + (1|location)",
+  lenSt_to_wtFr.lm="logWtFrond ~ logLenStipe * PAR_atDepth * lPAR_atDepth * SST * fetch + (1|location)",
+  wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PAR_atDepth * lPAR_atDepth * fetch + SST",
+  arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PAR_atDepth * lPAR_atDepth * fetch + SST",
+  canopyHeight.lm="maxStipeLen ~ SST * PAR_atDepth * lPAR_atDepth * fetch",
+  FAI.lm="FAI ~ PAR_atDepth * lPAR_atDepth * SST * fetch",
+  N_canopy.lm=c("N ~ PAR_atDepth * lPAR_atDepth * SST * fetch * logSlope + (1|location)",
+                "~ PAR_atDepth * lPAR_atDepth * SST * fetch * logSlope + (1|location)")
 )
 
 reg.best <- list(
