@@ -89,7 +89,8 @@ reg.dfs <- vector("list", length(reg.full)) %>% setNames(names(reg.full))
 
 reg.dfs$lenSt_to_wtSt.lm <- data.ls$lengthStipe_weightStipe %>%
   mutate(logWtStipe=log(weightStipe), 
-         logLenStipe=log(lengthStipe)) %>%
+         logLenStipe=log(lengthStipe),
+         lPAR_atDepth=log(PAR_atDepth)) %>%
   select(any_of(str_split(reg.full$lenSt_to_wtSt.lm, " ")[[1]]), location, reference)
 
 reg.dfs$lenSt_to_wtFr.lm <- data.ls$lengthStipe_weightFrond %>%
@@ -103,17 +104,20 @@ reg.dfs$wtFr_to_arFr.lm <- data.ls$weightFrond_areaFrond %>%
   group_by(reference, location, depth) %>%
   slice_head(n=20) %>% ungroup %>%
   mutate(logWtFrond=log(weightFrond),
-         logAreaFrond=log(areaFrond/1e4)) %>%
+         logAreaFrond=log(areaFrond/1e4),
+         lPAR_atDepth=log(PAR_atDepth)) %>%
   select(any_of(str_split(reg.full$wtFr_to_arFr.lm, " ")[[1]]), location, reference)
 
 reg.dfs$arFr_to_wtFr.lm <- reg.dfs$wtFr_to_arFr.lm %>%
   select(any_of(str_split(reg.full$arFr_to_wtFr.lm, " ")[[1]]), location, reference)
 
 reg.dfs$canopyHeight.lm <- data.ls$depth_maxStipeLen %>% 
-  mutate(location="a") %>%
+  mutate(location="a",
+         lPAR_atDepth=log(PAR_atDepth)) %>%
   select(any_of(str_split(reg.full$canopyHeight.lm, " ")[[1]]), location, reference)
 
 reg.dfs$FAI.lm <- data.ls$depth_FAI %>%
+  mutate(lPAR_atDepth=log(PAR_atDepth)) %>%
   select(any_of(str_split(reg.full$FAI.lm, " ")[[1]]), location, reference)
 
 reg.dfs$N_canopy.lm <- data.ls$lengthStipe_NperSqM %>%
@@ -129,7 +133,8 @@ reg.dfs$N_canopy.lm <- data.ls$lengthStipe_NperSqM %>%
               select(2:4, location, reference, SST, PAR_atDepth, fetch, logSlope) %>%
               rename(canopy=NperSqM, subcanopy=N_subcanopy, recruits=N_recruits) %>%
               pivot_longer(1:3, names_to="stage", values_to="NperSqM")) %>%
-  mutate(N=round(NperSqM)) %>%
+  mutate(N=round(NperSqM),
+         lPAR_atDepth=log(PAR_atDepth)) %>%
   ungroup %>%
   filter(stage=="canopy") %>%
   select(any_of(str_split(reg.full$N_canopy.lm, " ")[[1]]), location, N, reference)
