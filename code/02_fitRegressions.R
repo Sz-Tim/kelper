@@ -42,7 +42,7 @@ data.ls <- compileDatasets(data.dir, supp.f) %>%
 
 reg.full <- list(
   lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * PAR_atDepth * SST * fetch + (1|location)",
-  lenSt_to_wtFr.lm="logWtFrond ~ logLenStipe * PAR_atDepth * SST * fetch + (1|location)",
+  lenSt_to_wtFr.lm="logWtFrond ~ logLenStipe * lPAR_atDepth * SST * fetch + (1|location)",
   wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PAR_atDepth * fetch + SST",
   arFr_to_wtFr.lm="logWtFrond ~ logAreaFrond * PAR_atDepth * fetch + SST",
   canopyHeight.lm="maxStipeLen ~ SST * PAR_atDepth * fetch",
@@ -56,8 +56,8 @@ reg.best <- list(
   # Bekkby 2014, ref therein: stouter to resist waves
   lenSt_to_wtSt.lm="logWtStipe ~ logLenStipe * fetch + ( 1 | location )",
   # Kain 1963: wtFrond ~ -depth; Smith 2021: wtFrond ~ depth*region
-  lenSt_to_wtFr.lm=paste("logWtFrond ~ logLenStipe + PAR_atDepth + PAR_atDepth:logLenStipe +", 
-                         "SST + SST:PAR_atDepth + ( 1 | location )"),
+  lenSt_to_wtFr.lm=paste("logWtFrond ~ logLenStipe + lPAR_atDepth + lPAR_atDepth:logLenStipe +", 
+                         "SST + SST:lPAR_atDepth + ( 1 | location )"),
   # Kain 1977: deeper water = thinner fronds; slope ~ depth
   wtFr_to_arFr.lm="logAreaFrond ~ logWtFrond * PAR_atDepth",
   # Kain 1977: deeper water = thinner fronds; slope ~ depth
@@ -94,7 +94,8 @@ reg.dfs$lenSt_to_wtSt.lm <- data.ls$lengthStipe_weightStipe %>%
 
 reg.dfs$lenSt_to_wtFr.lm <- data.ls$lengthStipe_weightFrond %>%
   mutate(logLenStipe=log(lengthStipe), 
-         logWtFrond=log(weightFrond)) %>%
+         logWtFrond=log(weightFrond),
+         lPAR_atDepth=log(PAR_atDepth)) %>%
   select(any_of(str_split(reg.full$lenSt_to_wtFr.lm, " ")[[1]]), location, reference)
 
 reg.dfs$wtFr_to_arFr.lm <- data.ls$weightFrond_areaFrond %>%

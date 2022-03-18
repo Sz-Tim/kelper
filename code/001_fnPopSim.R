@@ -11,8 +11,9 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   #---- setup landscape
   env.df <- pars$env %>% 
     mutate(PAR_atDepth=PAR * exp(-KD * pars$depth),
+           lPAR_atDepth=log(PAR),
            location=NA) %>%
-    select(PAR_atDepth, SST, fetch, location)
+    select(PAR_atDepth, lPAR_atDepth, SST, fetch, location)
   if(nrow(pars$env) == 1) {
     env.df <- env.df %>% uncount(pars$tmax)
   }
