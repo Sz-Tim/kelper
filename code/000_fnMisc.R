@@ -534,14 +534,14 @@ simulateLandscape <- function(grid.sf, var.sf, nYr, colName) {
 # simulation wrappers -----------------------------------------------------
 
 
-simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim, 
-                                surv.df, fecund.df, lm.fit, lm.mnsd) {
+simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, grid.id=NA, gridRes, 
+                                pars.sim, surv.df, fecund.df, lm.fit, lm.mnsd) {
   library(glue); library(lubridate); library(sf); library(brms)
   library(Matrix); library(tidyverse)
   sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
   
   if(pars.sim$landscape=="dynamic") {
-    cell.env <- grid.sim %>% st_drop_geometry() %>% filter(id==grid.i$id[x])
+    cell.env <- grid.sim %>% filter(id==grid.i$id[x])
   } else {
     cell.env <- grid.i[x,]
   }
@@ -592,7 +592,8 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim,
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
              landscape=pars.sim$landscape,
-             stochParams=pars.sim$stochParams)
+             stochParams=pars.sim$stochParams,
+             grid.id=grid.id)
     mass.ls[[j]] <- imap_dfr(out,
                              ~tibble(sim=.y,
                                      year=rep(1:par_i$tmax, 3),
@@ -607,10 +608,12 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, gridRes, pars.sim,
       left_join(., par_i$env) %>%
       mutate(depth=par_i$depth,
              landscape=pars.sim$landscape,
-             stochParams=pars.sim$stochParams)
+             stochParams=pars.sim$stochParams,
+             grid.id=grid.id)
   }
   sim.info <- glue("{str_pad(x,4,'left','0')}_{gridRes}_{pars.sim$landscape}",
-                   "_{ifelse(pars.sim$stochParams, 'stochPar', 'optPar')}")
+                   "_{ifelse(pars.sim$stochParams, 'stochPar', 'optPar')}",
+                   "_g{str_pad(grid.id,3,'left','0')}")
   saveRDS(do.call(rbind, pop.ls), glue("out{sep}storms{sep}pop_{sim.info}.rds"))
   saveRDS(do.call(rbind, mass.ls), glue("out{sep}storms{sep}mass_{sim.info}.rds"))
   return(x)
