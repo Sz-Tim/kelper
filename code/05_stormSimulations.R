@@ -26,6 +26,7 @@ out.dir <- glue("out{sep}storms{sep}")
 # switches & settings
 gridRes <- c(0.1, 0.25)[1]
 gridRemake <- F
+rerun <- F
 nCores <- 40
 nSimGrid <- 500
 set.seed(789)
@@ -88,25 +89,27 @@ if(pars.sim$landscape=="dynamic") {
 
 # run simulations ---------------------------------------------------------
 
-
-cl <- makeCluster(nCores, outfile=glue("temp{sep}sim_out.txt"))
-
-for(i in 1:nSimGrid) {
-  if(pars.sim$landscape=="dynamic") {
-    grid.sim <- readRDS(glue("data{sep}gridSim{sep}gridSim_{gridRes}_{str_pad(i,3,'left','0')}.rds"))
-  } else {
-    grid.sim <- NULL
+if(rerun) {
+  cl <- makeCluster(nCores, outfile=glue("temp{sep}sim_out.txt"))
+  
+  for(i in 1:nSimGrid) {
+    if(pars.sim$landscape=="dynamic") {
+      grid.sim <- readRDS(glue("data{sep}gridSim{sep}gridSim_{gridRes}_{str_pad(i,3,'left','0')}.rds"))
+    } else {
+      grid.sim <- NULL
+    }
+    obj.exclude <- c("data.ls", "grid.sf")
+    obj.include <- ls()
+    
+    clusterExport(cl, obj.include[-match(obj.exclude, obj.include)])
+    Sys.sleep(1)
+    cat("Starting runs: grid", i, "of", nSimGrid, "\n")
+    out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=simDepthsWithinCell,
+                        grid.i=grid.i, grid.sim=grid.sim, grid.id=i, gridRes=gridRes,
+                        pars.sim=pars.sim, surv.df=surv.df, fecund.df=fecund.df,
+                        lm.fit=lm.fit, lm.mnsd=lm.mnsd)
   }
-  obj.exclude <- c("data.ls", "grid.sf")
-  obj.include <- ls()
-
-  clusterExport(cl, obj.include[-match(obj.exclude, obj.include)])
-  Sys.sleep(1)
-  cat("Starting runs: grid", i, "of", nSimGrid, "\n")
-  out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=simDepthsWithinCell,
-                      grid.i=grid.i, grid.sim=grid.sim, grid.id=i, gridRes=gridRes,
-                      pars.sim=pars.sim, surv.df=surv.df, fecund.df=fecund.df,
-                      lm.fit=lm.fit, lm.mnsd=lm.mnsd)
+  
+  stopCluster(cl)
 }
 
-stopCluster(cl)
