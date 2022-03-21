@@ -174,8 +174,7 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
 loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL) {
   library(stars)
   if(is.null(loadFile)) {
-    rast.proj <- dir(paste0(gis.dir, "climate"), "MODISA_L3m_SST.*11W", full.names=T)[1] %>%
-      raster() %>% crs
+    rast.proj <- CRS("+init=epsg:4326")
     covars.ls <- list(
       fetch=dir(paste0(gis.dir, "fetch"), "log10_UK200m_depth40_0na.tif$", full.names=T) %>%
         raster %>% projectRaster(., crs=rast.proj) %>% crop(bbox),
@@ -186,21 +185,21 @@ loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile
       sstDayGrow=dir(paste0(gis.dir, "climate"), 
                      "MODISA_L3m_SST.*11W_49N.*tif$", full.names=T) %>%
         setNames(., str_sub(., 84, 87)) %>%
-        map(raster) %>% stack() %>% crop(bbox) %>% 
+        map(raster) %>% stack() %>% projectRaster(., crs=rast.proj) %>% crop(bbox) %>% 
         st_as_stars() %>% st_as_sf() %>% 
         pivot_longer(starts_with("X"), names_to="YEAR", values_to="SST") %>%
         mutate(YEAR=str_sub(YEAR, 2, -1)),
       KD_mn=dir(paste0(gis.dir, "attenuation"), 
                 "MODISA_L3m_KD.*11W_49N.*tif$", full.names=T) %>%
         setNames(., str_sub(., 84, 87)) %>%
-        map(raster) %>% stack() %>% crop(bbox) %>% 
+        map(raster) %>% stack() %>% projectRaster(., crs=rast.proj) %>% crop(bbox) %>% 
         st_as_stars() %>% st_as_sf() %>% 
         pivot_longer(starts_with("X"), names_to="YEAR", values_to="KD") %>%
         mutate(YEAR=str_sub(YEAR, 2, -1)),
       PAR_mn=dir(paste0(gis.dir, "light"), 
                  "MODISA_L3m_PAR.*tif$", full.names=T)  %>%
         setNames(., str_sub(., 76, 79)) %>%
-        map(raster) %>% stack() %>% crop(bbox) %>% 
+        map(raster) %>% stack() %>% projectRaster(., crs=rast.proj) %>% crop(bbox) %>% 
         st_as_stars() %>% st_as_sf() %>% 
         pivot_longer(starts_with("X"), names_to="YEAR", values_to="PAR") %>%
         mutate(YEAR=str_sub(YEAR, 2, -1)),
@@ -212,11 +211,11 @@ loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile
         summarise(across(everything(), mean)) %>%
         group_by(PARAMETER, YEAR) %>% mutate(id=row_number()) %>% ungroup %>%
         pivot_longer(5:16, names_to="MONTH", values_to="PAR") %>%
-        st_as_sf(coords=c("LON", "LAT"), crs=4326)
+        st_as_sf(coords=c("LON", "LAT"), crs=rast.proj)
     )
     
     irrad.grid <- (st_bbox(covars.ls$irrad_monthly) + .25*c(-1,-1,1,1)) %>%
-      st_make_grid(cellsize=c(0.5, 0.5)) %>% st_sf(id=1:length(.))
+      st_make_grid(cellsize=c(0.5, 0.5)) %>% st_sf(id=1:length(.), crs=rast.proj)
     
     covars.ls$irrad_growing.month <- covars.ls$irrad_monthly %>%
       filter(MONTH %in% c("JAN", "FEB", "MAR", "APR", "MAY", "JUN")) %>%
