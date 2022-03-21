@@ -10,7 +10,7 @@
 # set up ------------------------------------------------------------------
 
 # libraries and local functions
-pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "brms")
+pkgs <- c("raster", "lubridate", "glue", "tidyverse", "sf", "brms", "ggpubr")
 suppressMessages(invisible(lapply(pkgs, library, character.only=T)))
 walk(dir("code", "^00.*R", full.names=T), source)
 theme_set(theme_bw())
@@ -34,44 +34,62 @@ gridRes <- 0.1
 
 # regressions -------------------------------------------------------------
 
+lm.fit <- readRDS(glue("data{sep}fits_{gridRes}.rds"))
+out.eff <- map(lm.fit, conditional_effects)
 
-out.eff <- map(out, conditional_effects)
-
-ggpubr::ggarrange(plotlist=plot(out.eff[[1]], ask=F, points=T, plot=F), 
+ggpubr::ggarrange(plotlist=plot(out.eff[[1]], ask=F, points=T, plot=F, 
+                                point_args=list(shape=1, size=0.75, alpha=0.8)), 
                   nrow=1, widths=c(1,1,1.2))
-ggsave("figs/condEff_1.pdf", width=12, height=4)
+ggsave(glue("figs{sep}regr{sep}condEff_1_{gridRes}.png"), width=12, height=4)
 
-ggpubr::ggarrange(plotlist=plot(out.eff[[2]], ask=F, points=T, plot=F), 
+ggpubr::ggarrange(
+  plotlist=plot(conditional_effects(lm.fit[[2]], 
+                                    effects=c("logLenStipe", "lPAR_atDepth", "SST")), 
+                ask=F, points=T, plot=F, 
+                point_args=list(shape=1, size=0.75, alpha=0.8)), 
+  nrow=1, widths=c(1,1,1))
+ggsave(glue("figs{sep}regr{sep}condEff_2a_{gridRes}.png"), width=12, height=4)
+ggpubr::ggarrange(
+  plotlist=plot(conditional_effects(lm.fit[[2]], 
+                                    effects=c("logLenStipe:lPAR_atDepth", "lPAR_atDepth:SST")), 
+                ask=F, points=T, plot=F, 
+                point_args=list(shape=1, size=0.75, alpha=0.8)), 
+  nrow=1, widths=c(1,1))
+ggsave(glue("figs{sep}regr{sep}condEff_2b_{gridRes}.png"), width=9, height=4)
+
+ggpubr::ggarrange(plotlist=plot(out.eff[[3]], ask=F, points=T, plot=F, 
+                                point_args=list(shape=1, size=0.75, alpha=0.8)), 
                   nrow=1, widths=c(1,1,1.2))
-ggsave("figs/condEff_2.pdf", width=12, height=4)
+ggsave(glue("figs{sep}regr{sep}condEff_4_{gridRes}.png"), width=12, height=4)
 
-ggpubr::ggarrange(plotlist=plot(out.eff[[3]], ask=F, points=T, plot=F), 
+ggpubr::ggarrange(plotlist=plot(out.eff[[4]], ask=F, points=T, plot=F, 
+                                point_args=list(shape=1, size=0.75, alpha=0.8)), 
                   nrow=1, widths=c(1,1,1.2))
-ggsave("figs/condEff_4.pdf", width=12, height=4)
+ggsave(glue("figs{sep}regr{sep}condEff_3_{gridRes}.png"), width=12, height=4)
 
-ggpubr::ggarrange(plotlist=plot(out.eff[[4]], ask=F, points=T, plot=F), 
-                  nrow=1, widths=c(1,1,1.2))
-ggsave("figs/condEff_3.pdf", width=12, height=4)
+ggpubr::ggarrange(plotlist=plot(out.eff[[5]], ask=F, points=T, plot=F, 
+                                point_args=list(shape=1, size=0.75, alpha=0.8)))
+ggsave(glue("figs{sep}regr{sep}condEff_5_{gridRes}.png"), width=4, height=4)
 
-ggpubr::ggarrange(plotlist=plot(out.eff[[5]], ask=F, points=T, plot=F))
-ggsave("figs/condEff_5.pdf", width=4, height=4)
-
-ggpubr::ggarrange(plotlist=plot(out.eff[[6]], ask=F, points=T, plot=F), 
+ggpubr::ggarrange(plotlist=plot(out.eff[[6]], ask=F, points=T, plot=F, 
+                                point_args=list(shape=1, size=0.75, alpha=0.8)), 
                   nrow=1)
-ggsave("figs/condEff_6.pdf", width=8, height=4)
+ggsave(glue("figs{sep}regr{sep}condEff_6_{gridRes}.png"), width=8, height=4)
 
 ggpubr::ggarrange(
-  plotlist=plot(conditional_effects(out[[7]], 
+  plotlist=plot(conditional_effects(lm.fit[[7]], 
                                     effects=c("PAR_atDepth", "SST", "fetch")), ask=F,
-                points=T, plot=F),
+                points=T, plot=F, 
+                point_args=list(shape=1, size=0.75, alpha=0.8)),
   nrow=1)
-ggsave("figs/condEff_7a.pdf", width=12, height=4)
+ggsave(glue("figs{sep}regr{sep}condEff_7a_{gridRes}.png"), width=12, height=4)
 ggpubr::ggarrange(
-  plotlist=plot(conditional_effects(out[[7]], 
+  plotlist=plot(conditional_effects(lm.fit[[7]], 
                                     effects=c("PAR_atDepth:SST", "PAR_atDepth:fetch")), ask=F, 
-                points=T, plot=F),
+                points=T, plot=F, 
+                point_args=list(shape=1, size=0.75, alpha=0.8)),
   nrow=1)
-ggsave("figs/condEff_7b.pdf", width=9, height=4)
+ggsave(glue("figs{sep}regr{sep}condEff_7b_{gridRes}.png"), width=9, height=4)
 
 
 
@@ -83,15 +101,25 @@ ggsave("figs/condEff_7b.pdf", width=9, height=4)
 
 sim.title <- glue("{gridRes} arc-sec grid")
 grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
-  select(id, geom, PAR_surface)
-pop.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}.rds")) %>% filter(month!=6)
-pop.sum <- readRDS(glue("summaries{sep}pop_sum_{gridRes}.rds")) %>% filter(month!=6)
+  select(id, geom, PAR_surface) %>% 
+  filter(id > ifelse(gridRes==0.1, 5, 2))
+pop.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}.rds")) %>% filter(month!=6) %>% 
+  filter(id > ifelse(gridRes==0.1, 5, 2))
+pop.sum <- readRDS(glue("summaries{sep}pop_sum_{gridRes}.rds")) %>% filter(month!=6) %>% 
+  filter(id > ifelse(gridRes==0.1, 5, 2))
 pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
-mass.df <- readRDS(glue("summaries{sep}mass_df_{gridRes}.rds")) %>% filter(month!=6)
-mass.sum <- readRDS(glue("summaries{sep}mass_sum_{gridRes}.rds")) %>% filter(month!=6)
+mass.df <- readRDS(glue("summaries{sep}mass_df_{gridRes}.rds")) %>% filter(month!=6) %>% 
+  filter(id > ifelse(gridRes==0.1, 5, 2))
+mass.sum <- readRDS(glue("summaries{sep}mass_sum_{gridRes}.rds")) %>% filter(month!=6) %>% 
+  filter(id > ifelse(gridRes==0.1, 5, 2))
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
 obs.ls <- readRDS(glue("data{sep}dfs_{gridRes}.rds"))
 
+
+
+
+
+# environmental scatterplots ----------------------------------------------
 
 # Abundance by PAR
 pop.sum %>% filter(month==7) %>%
@@ -180,186 +208,382 @@ pop.sum %>% filter(month==7) %>%
 
 
 
-# Abundance maps
-pop.sum.sf %>% filter(stage=="canopy") %>% 
-  ggplot(aes(fill=N_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() +
-  facet_grid(month*landscape~depth)
-pop.sum.sf %>% filter(stage=="canopy") %>% 
-  ggplot(aes(fill=N_pOcc)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c(limits=c(0,1)) +
-  facet_grid(month*landscape~depth)
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=N_sd/N_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() +
-  facet_grid(month*landscape~depth)
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=N_md>1)) + geom_sf(colour=NA) + 
-  facet_grid(month*landscape~depth)
-
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=K_N_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() +
-  facet_grid(landscape*stochParams~depth)
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=K_N_sd)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() +
-  facet_grid(landscape*stochParams~depth)
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=K_N_md>1)) + geom_sf(colour=NA) + 
-  facet_grid(landscape*stochParams~depth)
-
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=K_FAI_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(landscape*stochParams~depth)
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=K_FAI_sd)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(landscape*stochParams~depth)
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=K_FAI_md>1)) + geom_sf(colour=NA) +  
-  facet_grid(landscape*stochParams~depth)
-
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=kappa_N_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c(limits=c(0,1)) +
-  facet_grid(landscape*stochParams~depth)
-pop.sum.sf %>%filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=kappa_FAI_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c(limits=c(0,1)) +
-  facet_grid(landscape*stochParams~depth)
-pop.sum.sf %>% filter(stage=="canopy") %>% filter(month!=6) %>%
-  ggplot(aes(fill=kappa_N_mn-kappa_FAI_mn)) + geom_sf(colour=NA) + 
-  scale_fill_gradient2(limits=c(-1, 1)) +
-  facet_grid(landscape*stochParams~depth)
 
 
 
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=biomass_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() +
-  facet_grid(landscape*stochParams~depth)
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=biomass_q90)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() +
-  facet_grid(landscape*stochParams~depth)
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=biomass_sd)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() +
-  facet_grid(landscape*stochParams~depth)
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=biomass_sd/biomass_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c("biomass CV") +
-  facet_grid(landscape*stochParams~depth)
+# maps: kelp --------------------------------------------------------------
+
+pop.sum.sf_canopy <- pop.sum.sf %>% filter(stage=="canopy") %>%
+  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
+         month=month.name[month])
+mass.sum.sf_canopy <- mass.sum.sf %>% 
+  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
+         month=month.name[month])
+map_base.gg <- ggplot() +
+  theme(legend.position="bottom", 
+        panel.grid=element_blank()) +
+  scale_x_continuous(breaks=c(-8,0)) +
+  scale_y_continuous(breaks=c(52, 58)) 
 
 
+# * N: all months, landscapes, depths  ------------------------------------
 
-# Landscape maps
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=PAR_atDepth_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(landscape~depth)
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=PAR_atDepth_sd)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(landscape~depth)
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=PAR_atDepth_sd/PAR_atDepth_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c("PAR CV") + 
-  facet_grid(landscape~depth)
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=PAR_atDepth_max)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(landscape~depth)
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=PAR_atDepth_max-PAR_atDepth_min)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c("PAR range") + 
-  facet_grid(landscape~depth)
-mass.df %>% filter(month==7) %>%
-  filter(landscape=="dynamic" & depth==5 & month==7) %>%
-  full_join(grid.sf, ., by="id") %>%
-  ggplot(aes(fill=PAR_atDepth)) + geom_sf(colour=NA) +
-  scale_fill_viridis_c("PAR (5m)") + 
-  facet_wrap(~year, nrow=3)
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy, 
+          colour=NA, aes(fill=N_mn)) +
+  scale_fill_gradient("N", low="grey90", high="green4", limits=c(0, NA)) +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Mean canopy density")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_mean_MonLndDep.png"), p, width=6, height=8, dpi=200)
 
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=fetch_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(landscape~depth)
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy, 
+          colour=NA, aes(fill=N_md>1)) +
+  scale_fill_manual("N > 1", values=c("grey90", "green4")) +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Canopy presence (median N > 1)")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_Pres_MonLndDep.png"), p, width=6, height=8, dpi=200)
 
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=SST_mn)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(landscape~depth)
-mass.sum.sf %>% filter(month==7) %>%
-  ggplot(aes(fill=SST_sd)) + geom_sf(colour=NA) + 
-  scale_fill_viridis_c() + 
-  facet_grid(landscape~depth)
-mass.df %>% filter(month==7) %>%
-  filter(landscape=="dynamic" & depth==2 & month==7) %>%
-  full_join(grid.sf, ., by="id") %>%
-  ggplot(aes(fill=SST)) + geom_sf(colour=NA) +
-  scale_fill_viridis_c(option="B") + 
-  facet_wrap(~year, nrow=3)
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy, 
+          colour=NA, aes(fill=N_pOcc)) +
+  scale_fill_gradient("N", low="grey90", high="green4") +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Proportion of years with canopy presence")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_pOcc_MonLndDep.png"), p, width=6, height=8, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy, 
+          colour=NA, aes(fill=logN_sd)) +
+  scale_fill_viridis_c("sd") +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Canopy variability among years (sd(ln(N))")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_sdln_MonLndDep.png"), p, width=6, height=8, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy, 
+          colour=NA, aes(fill=logN_sd/logN_mn)) +
+  scale_fill_viridis_c("CV") +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Canopy variability among years (CV(ln(N))")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_CVln_MonLndDep.png"), p, width=6, height=8, dpi=200)
 
 
 
 
-mass.df %>% 
-  filter(landscape=="static" & depth==2 & month==7) %>%
-  full_join(grid.sf, ., by="id") %>%
-  ggplot(aes(fill=biomass)) + geom_sf(colour=NA) +
-  scale_fill_viridis_c() + 
-  facet_wrap(~year, nrow=3)
+
+# * N: select scenarios ---------------------------------------------------
+
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=N_mn)) +
+  scale_fill_gradient("N", low="grey90", high="green4", limits=c(0, NA)) +
+  facet_grid(.~depth) +
+  ggtitle("July mean canopy density")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_mean_JulStaDep.png"), p, width=8, height=4, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=N_md>1)) +
+  scale_fill_manual("N > 1", values=c("grey90", "green4")) +
+  facet_grid(.~depth) +
+  ggtitle("July canopy presence (median N > 1)")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_Pres_JulStaDep.png"), p, width=8, height=4, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=N_pOcc)) +
+  scale_fill_gradient("N", low="grey90", high="green4") +
+  facet_grid(.~depth) +
+  ggtitle("Proportion of years with July canopy presence")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_pOcc_JulStaDep.png"), p, width=8, height=4, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=logN_sd)) +
+  scale_fill_viridis_c("sd") +
+  facet_grid(.~depth) +
+  ggtitle("July canopy variability among years (sd(ln(N))")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_sdln_JulStaDep.png"), p, width=8, height=4, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=logN_sd/logN_mn)) +
+  scale_fill_viridis_c("CV") +
+  facet_grid(.~depth) +
+  ggtitle("July canopy variability among years (CV(ln(N))")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_CVln_JulStaDep.png"), p, width=8, height=4, dpi=200)
+ 
 
 
 
-samp_id <- sample(unique(pop.df$id), 10)
 
-pop.df %>% filter(id %in% samp_id) %>% filter(stage=="canopy") %>% filter(month==1) %>%
-  ggplot(aes(year, N, group=paste(id, landscape), colour=landscape)) +
-  geom_line() + facet_grid(id~depth, scales="free_y") 
 
-mass.df %>% filter(id %in% samp_id) %>% filter(month==7) %>%
+
+# * N: resid landscape ----------------------------------------------------
+pop.resid.sf <- pop.sum.sf_canopy %>% 
+  select(id, month, depth, landscape, N_md, N_mn, N_sd, N_pOcc, logN_mn, logN_sd) %>%
+  mutate(N_pres=as.numeric(N_md>1),
+         logN_CV=logN_sd/logN_mn) %>%
+  group_by(id, month, depth) %>% 
+  arrange(id, month, depth, landscape) %>%
+  mutate(across(where(is.numeric), ~first(.x)-last(.x))) %>%
+  slice_head(n=1)
+
+p <- map_base.gg +
+  geom_sf(data=pop.resid.sf, 
+          colour=NA, aes(fill=N_mn)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Mean canopy abundance: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_mean_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.resid.sf, 
+          colour=NA, aes(fill=N_pres)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Canopy presence: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_Pres_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.resid.sf, 
+          colour=NA, aes(fill=N_pOcc)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Proportion of years with canopy presence: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_pOcc_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.resid.sf, 
+          colour=NA, aes(fill=logN_sd)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Canopy variability among years: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_sdln_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=pop.resid.sf, 
+          colour=NA, aes(fill=logN_CV)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Canopy variability among years: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_N_CVln_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+
+
+
+# * biomass: all months, landscapes, depths -------------------------------
+
+p <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy, 
+          colour=NA, aes(fill=biomass_mn)) +
+  scale_fill_gradient("Biomass (kg)", low="grey90", high="green4", limits=c(0, NA)) +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Mean canopy biomass")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_mean_MonLndDep.png"), p, width=6, height=8, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy, 
+          colour=NA, aes(fill=logBiomass_mn)) +
+  scale_fill_gradient("ln(biomass) (kg)", low="grey90", high="green4") +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Mean canopy biomass")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_lnmean_MonLndDep.png"), p, width=6, height=8, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy, 
+          colour=NA, aes(fill=logBiomass_sd)) +
+  scale_fill_viridis_c("sd") +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Canopy biomass variability among years (sd(ln(biomass))")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_sdln_MonLndDep.png"), p, width=6, height=8, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy, 
+          colour=NA, aes(fill=logBiomass_sd/logBiomass_mn)) +
+  scale_fill_viridis_c("CV") +
+  facet_grid(month*landscape~depth) +
+  ggtitle("Canopy variability among years (CV(log(biomass))")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_CVln_MonLndDep.png"), p, width=6, height=8, dpi=200)
+
+
+
+
+
+# * biomass: select scenarios ---------------------------------------------
+
+p <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=biomass_mn)) +
+  scale_fill_gradient("Biomass (kg)", low="grey90", high="green4", limits=c(0, NA)) +
+  facet_grid(.~depth) +
+  ggtitle("July mean canopy biomass")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_mean_JulStaDep.png"), p, width=8, height=4, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=logBiomass_mn)) +
+  scale_fill_gradient("ln(biomass) (kg)", low="grey90", high="green4") +
+  facet_grid(.~depth) +
+  ggtitle("July mean canopy biomass")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_lnmean_JulStaDep.png"), p, width=8, height=4, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=logBiomass_sd)) +
+  scale_fill_viridis_c("sd") +
+  facet_grid(.~depth) +
+  ggtitle("July canopy biomass variability among years (sd(ln(biomass))")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_sdln_JulStaDep.png"), p, width=8, height=4, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & landscape=="static"), 
+          colour=NA, aes(fill=logBiomass_sd/logBiomass_mn)) +
+  scale_fill_viridis_c("CV") +
+  facet_grid(.~depth) +
+  ggtitle("July canopy variability among years (CV(log(biomass))")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_CVln_JulStaDep.png"), p, width=8, height=4, dpi=200)
+
+
+
+
+
+
+
+# * biomass: resid landscape ----------------------------------------------
+mass.resid.sf <- mass.sum.sf_canopy %>% 
+  select(id, month, depth, landscape, biomass_md, biomass_mn, biomass_sd, logBiomass_mn, logBiomass_sd) %>%
+  mutate(logBiomass_CV=logBiomass_sd/logBiomass_mn) %>%
+  group_by(id, month, depth) %>% 
+  arrange(id, month, depth, landscape) %>%
+  mutate(across(where(is.numeric), ~first(.x)-last(.x))) %>%
+  slice_head(n=1)
+
+p <- map_base.gg +
+  geom_sf(data=mass.resid.sf, 
+          colour=NA, aes(fill=biomass_mn)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Mean canopy biomass: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_mean_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.resid.sf, 
+          colour=NA, aes(fill=logBiomass_mn)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Mean canopy biomass: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_lnmean_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.resid.sf, 
+          colour=NA, aes(fill=logBiomass_sd)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Canopy biomass variability among years: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_sdln_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+p <- map_base.gg +
+  geom_sf(data=mass.resid.sf, 
+          colour=NA, aes(fill=logBiomass_CV)) +
+  scale_fill_gradient2("dynamic - static", mid="grey90") +
+  facet_grid(month~depth) +
+  ggtitle("Canopy variability among years: Environmental stochasticity")
+ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_CVln_MonDep_Resid.png"), p, width=8, height=6, dpi=200)
+
+
+
+
+
+
+
+
+# * pub figs --------------------------------------------------------------
+
+fig2a <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & landscape=="dynamic"), 
+          colour=NA, aes(fill=logBiomass_mn)) +
+  scale_fill_gradient(expression("ln kg/m"^2), low="grey90", high="green4", limits=c(0,NA)) +
+  facet_grid(.~depth) + theme(legend.position="right") +
+  ggtitle("July canopy biomass mean") + theme_classic()
+fig2b <- map_base.gg +
+  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & landscape=="dynamic"), 
+          colour=NA, aes(fill=logBiomass_sd)) +
+  scale_fill_viridis_c(expression("ln kg/m"^2), limits=c(0, NA)) +
+  facet_grid(.~depth) + theme(legend.position="right") +
+  ggtitle("July canopy biomass standard deviation among years") + theme_classic()
+fig2 <- ggarrange(fig2a, fig2b, ncol=1, labels="auto")
+ggsave(glue("figs{sep}storm{sep}pub{sep}biomass_mn_sd.png"), fig2,
+       width=8, height=5.75, dpi=300)
+
+
+
+
+
+
+
+# timeseries --------------------------------------------------------------
+
+samp <- mass.df %>% 
+  filter(landscape=="static" & depth==2 & month==1 & year==1) %>%
+  group_by(fetchCat) %>%
+  sample_n(2)
+map_base.gg + 
+  geom_sf(data=grid.sf, colour=NA, fill="grey90") +
+  geom_sf(data=filter(grid.sf, id %in% samp$id), colour=NA, aes(fill=as.character(id))) +
+  scale_fill_brewer(type="qual", palette=2) +
+  theme(legend.position="right")
+mass.df %>% filter(id %in% samp$id) %>% 
+  filter(month==1) %>%
+  filter(depth %in% c(2,5,10)) %>% 
+  filter(landscape=="static") %>%
+  ggplot(aes(year, biomass, group=id, colour=as.character(id))) +
+  geom_line() + scale_colour_brewer(type="qual", palette=2) +
+  facet_grid(fetchCat~depth, scales="free_y") 
+
+
+
+
+mass.df %>% filter(id %in% samp$id) %>% filter(month==7) %>%
   ggplot(aes(year, biomass, group=paste(landscape, depth), colour=landscape)) +
   geom_line() + facet_grid(id~depth, scales="free_y")
 
 
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
+pop.df %>% filter(id %in% samp$id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
   ggplot(aes(year, N, group=paste(landscape, stochParams, sim), 
              colour=landscape, linetype=stochParams)) + 
   geom_line() +
   facet_grid(id~depth) 
-mass.df %>% filter(id %in% samp_id) %>% filter(month==7) %>% 
+mass.df %>% filter(id %in% samp$id) %>% filter(month==7) %>% 
   ggplot(aes(year, biomass, group=paste(landscape, stochParams, sim), 
              colour=landscape, linetype=stochParams)) + 
   geom_line() +
   facet_grid(id~depth) 
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
+pop.df %>% filter(id %in% samp$id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
   ggplot(aes(year, kappa_FAI, group=paste(landscape, stochParams, sim), 
              colour=landscape, linetype=stochParams)) + geom_line() +
   facet_grid(id~depth) + ylim(0, 1) 
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
+pop.df %>% filter(id %in% samp$id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
   mutate(kappa=pmax(kappa_N, kappa_FAI)) %>%
   ggplot(aes(year, kappa, group=paste(landscape, stochParams, sim), 
              colour=landscape, linetype=stochParams)) + geom_line() +
   facet_grid(id~depth) + ylim(0, 1)
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
+pop.df %>% filter(id %in% samp$id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
   ggplot(aes(year, N, group=paste(landscape, stochParams, sim), 
              colour=landscape, linetype=stochParams)) + geom_line() +
   facet_grid(id~depth, scales="free_y")
 
-pop.df %>% filter(id %in% samp_id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
+pop.df %>% filter(id %in% samp$id) %>% filter(month==7) %>% filter(stage=="canopy") %>%
   ggplot(aes(year, FAI, group=paste(landscape, stochParams, sim), 
              colour=landscape, linetype=stochParams)) + geom_line() +
   facet_grid(id~depth, scales="free_y")
 
-mass.df %>% filter(id %in% samp_id) %>% filter(month==7) %>%
+mass.df %>% filter(id %in% samp$id) %>% filter(month==7) %>%
   ggplot(aes(year, biomass, group=paste(landscape, stochParams, sim), 
              colour=landscape, linetype=stochParams)) + geom_line() +
   facet_grid(id~depth, scales="free_y")
@@ -387,7 +611,7 @@ mass.sum %>% ungroup %>%
 # I think this doesn't really make sense because of the open settlement. Bummer.
 pop.df %>% filter(stage=="canopy") %>%
   filter(month==1) %>% 
-  filter(id %in% samp_id) %>%
+  filter(id %in% samp$id) %>%
   group_by(id, depth, landscape, stochParams, sim) %>%
   mutate(lambda=N/lag(N, 1)) %>%
   ggplot(aes(log(lambda), colour=depth, group=depth)) + geom_density() + 
@@ -456,12 +680,13 @@ pop.df %>% filter(stage=="canopy") %>%
 
 
 
+# animations --------------------------------------------------------------
 
 
 library(gganimate)
 pop.sf <- full_join(grid.sf, 
                     pop.df %>% filter(stage=="canopy") %>%
-                      filter(month==7) %>% filter(depth < 15), 
+                      filter(month==7), 
                     by="id")
 anim <- pop.sf %>% 
   ggplot() + geom_sf(aes(fill=N), colour=NA) + 
@@ -483,7 +708,7 @@ anim_save(glue("figs{sep}canopy_FAI_Jul_{gridRes}.gif"),
 
 pop.sf <- full_join(grid.sf, 
                     pop.df %>% filter(stage=="canopy") %>%
-                      filter(month==1) %>% filter(depth < 15), 
+                      filter(month==1), 
                     by="id")
 anim <- pop.sf %>% 
   ggplot() + geom_sf(aes(fill=N), colour=NA) + 
@@ -498,7 +723,7 @@ anim <- pop.sf %>%
   ggplot() + geom_sf(aes(fill=FAI), colour=NA) + 
   transition_states(year+1942) + ease_aes('cubic-in-out') +
   ggtitle(paste0("January canopy FAI: Year {closest_state}")) +
-  facet_grid(.~depth) +
+  facet_grid(landscape~depth) +
   scale_fill_viridis_c() + theme(axis.text=element_blank())
 anim_save(glue("figs{sep}canopy_FAI_Jan_{gridRes}.gif"), 
           anim, nframes=max(pop.sf$year))
@@ -508,7 +733,7 @@ anim <- mass.sf %>%
   ggplot() + geom_sf(aes(fill=biomass), colour=NA) + 
   transition_states(year+1942) + ease_aes('cubic-in-out') +
   ggtitle(paste0("July canopy biomass: Year {closest_state}")) +
-  facet_grid(.~depth) +
+  facet_grid(landscape~depth) +
   scale_fill_viridis_c("Biomass\nkg/m2") + theme(axis.text=element_blank())
 anim_save(glue("figs{sep}biomass_Jul_{gridRes}.gif"),
           anim, nframes=max(mass.sf$year))
