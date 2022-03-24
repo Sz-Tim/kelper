@@ -71,23 +71,33 @@ rate_stipe <- cbind(c(194, 195, 58), c(23, 21, 10)) # mn, sd by stage
 rate_frond <- cbind(c(1787, 2299, 3979), c(179, 397, 417))/1e4
 par.rng <- list(surv=surv.df %>%
                   mutate(stage=stageFrom,
+                         valMean=1-rate_mn,
+                         valSD=rate_sd,
                          valMin=1-pmin(1, pmax(0, rate_mn+2*rate_sd)),
                          valMax=1-pmin(1, pmax(0, rate_mn-2*rate_sd))) %>%
-                  select(stage, valMin, valMax, exposure),
+                  select(stage, valMean, valSD, valMin, valMax, exposure),
                 settlement=fecund.df %>%
-                  mutate(valMin=pmax(0, rate_mn-2*rate_sd),
+                  mutate(valMean=rate_mn,
+                         valSD=rate_sd,
+                         valMin=pmax(0, rate_mn-2*rate_sd),
                          valMax=pmax(0, rate_mn+2*rate_sd)) %>%
-                  select(valMin, valMax, exposure),
+                  select(valMean, valSD, valMin, valMax, exposure),
                 growStipe=tibble(stage=c("recruits", "subcanopy", "canopy"),
+                                 valMean=rate_stipe[,1],
+                                 valSD=rate_stipe[,2],
                                  valMin=apply(rate_stipe, 1, function(x) x[1]-2*x[2]),
                                  valMax=apply(rate_stipe, 1, function(x) x[1]+2*x[2])),
                 growFrond=tibble(stage=c("recruits", "subcanopy", "canopy"),
+                                 valMean=rate_frond[,1],
+                                 valSD=rate_frond[,2],
                                  valMin=apply(rate_frond, 1, function(x) x[1]-2*x[2]),
                                  valMax=apply(rate_frond, 1, function(x) x[1]+2*x[2])),
-                loss=tibble(valMin=qbeta(0.025, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2]),
+                loss=tibble(valMean=loss_mnPrec[1],
+                            valMin=qbeta(0.025, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2]),
                             valMax=qbeta(0.975, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2])),
-                densityEffShape=tibble(valMin=0.5, valMax=2)) %>%
+                densityEffShape=tibble(valMean=1, valMin=0.5, valMax=2)) %>%
   imap_dfr(., ~.x %>% mutate(param=.y))
+saveRDS(par.rng, glue("{sens.dir}parameter_ranges.rds"))
 
 if(rerun) {
   parSets <- map_dfr(1:pars.sens$nParDraws, 
@@ -180,33 +190,9 @@ if(reanalyse) {
 dir(glue("{sens.dir}{sep}BRTs{sep}summaries{sep}"), "_ri_", full.names=T) %>%
   map_dfr(~read_csv(.x, show_col_types=F)) %>% 
   write_csv(glue("{sens.dir}{sep}RelInf_{gridRes}.csv"))
-#  group_by(response, id, month, depth) %>% 
-#  filter(smp==max(smp), td==max(td))
 
-# ri.df %>% group_by(var, month, depth, response) %>%
-#  summarise(rel.inf=mean(rel.inf)) %>%
-#  ggplot(aes(var, rel.inf, fill=depth)) +
-#  geom_bar(stat="identity", position="dodge") +
-#  facet_grid(month~response) + coord_flip()
-# 
-# ri.df %>% filter(response=="biomass_mn") %>%
-#  left_join(grid.sf, .) %>%
-#  ggplot(aes(fill=rel.inf)) +
-#  geom_sf(colour=NA) +
-#  scale_fill_viridis_c() + theme(axis.text=element_blank()) +
-#  facet_grid(depth*month~var)
-# 
-# ri.df %>% filter(response=="biomass_mn") %>%
-#  right_join(grid.i, .) %>%
-#  ggplot(aes(rel.inf, colour=as.factor(fetchCat))) +
-#  geom_density() +
-#  facet_wrap(~depth*month*var, scales="free_y", ncol=n_distinct(ri.df$var))
-# 
-# 
-# ri.df %>%
-#  right_join(grid.i, .) %>%
-#  ggplot(aes(fetch, rel.inf, colour=paste(month, depth))) + geom_point(shape=1) +
-#  facet_grid(response~var)
+
+
 
 
 
