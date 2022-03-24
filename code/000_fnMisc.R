@@ -11,6 +11,15 @@
 # data preparation --------------------------------------------------------
 
 
+#' Compile datasets from digitized csvs
+#'
+#' @param data.dir Directory with digitized csv files
+#' @param supp.f Directory with collaborator files
+#'
+#' @return
+#' @export
+#'
+#' @examples
 compileDatasets <- function(data.dir, supp.f=NULL) {
   
   library(tidyverse)
@@ -19,11 +28,6 @@ compileDatasets <- function(data.dir, supp.f=NULL) {
     # read in data from Dan Smale -- requires different formatting
     library(readxl)
     supp.sheets <- excel_sheets(supp.f)[-1]
-    # Add this chunk somewhere else
-    # NOTE: I should assume 4 year olds = subcanopy for the growth rates
-    # ggplot(supp.raw$allometry, aes(factor(Age), weightFrond, fill=factor(depth))) + 
-    #   geom_boxplot() + scale_fill_viridis_d()
-    # BUT facet by region......?
     supp.sites <- read_xlsx(supp.f, "siteLocations", skip=1) %>%
       select(Location, lat, lon) %>%
       rename(location=Location)
@@ -107,6 +111,17 @@ compileDatasets <- function(data.dir, supp.f=NULL) {
 
 
 
+#' Load covariates summarised to mn, sd across years
+#'
+#' @param gis.dir GIS directory
+#' @param bbox Bounding box
+#' @param loadFile .rds file to load; takes priority if !NULL 
+#' @param saveFile .rds file to save
+#'
+#' @return
+#' @export
+#'
+#' @examples
 loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL) {
   if(is.null(loadFile)) {
     rast.proj <- dir(paste0(gis.dir, "climate"), "MODISA_L3m_SST.*11W", full.names=T)[1] %>%
@@ -171,6 +186,17 @@ loadCovariates <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL
 
 
 
+#' Load covariates unsummarised across years
+#'
+#' @param gis.dir GIS directory
+#' @param bbox Bounding box
+#' @param loadFile .rds file to load; takes priority if !NULL 
+#' @param saveFile .rds file to save
+#'
+#' @return
+#' @export
+#'
+#' @examples
 loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile=NULL) {
   library(stars)
   if(is.null(loadFile)) {
@@ -241,9 +267,19 @@ loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile
 
 
 
+#' Extract covariate values to dataset locations
+#'
+#' @param data.ls List loaded with compileDatasets()
+#' @param covars.ls Covariates loaded with loadCovariates()
+#' @param PAR_datasource PAR source (MODIS vs POWER)
+#' @param grid.sf Grid sf object
+#'
+#' @return
+#' @export
+#'
+#' @examples
 extractCovarsToDatasets <- function(data.ls, covars.ls=NULL, PAR_datasource, grid.sf=NULL) {
   if(is.null(grid.sf)) {
-    # fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
     fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
     for(i in seq_along(data.ls)) {
       if(any(!is.na(data.ls[[i]]$lat))) {
@@ -309,8 +345,17 @@ extractCovarsToDatasets <- function(data.ls, covars.ls=NULL, PAR_datasource, gri
 
 
 
+#' Extract covariate values to point locations
+#'
+#' @param site.i Dataframe with site lat, lon
+#' @param covars.ls Covariates loaded with loadCovariates()
+#' @param PAR_datasource PAR source (MODIS vs POWER)
+#'
+#' @return
+#' @export
+#'
+#' @examples
 extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
-  # fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
   fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
   site.sf <- site.i %>% 
     filter(!is.na(lat) & !is.na(lon)) %>%
@@ -347,8 +392,17 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
 
 
 
+#' Extract covariate values to grid cells
+#'
+#' @param grid.domain Grid sf file
+#' @param covars.ls Covariates loaded with loadCovariates()
+#' @param PAR_datasource PAR source (MODIS vs POWER)
+#'
+#' @return
+#' @export
+#'
+#' @examples
 extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
-  # fetch_thirds <- quantile(covars.ls$fetch@data@values, probs=(1:2)/3, na.rm=T)
   fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
   grid.domain <- grid.domain %>% 
     mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, grid.domain, fun=mean, na.rm=T),
@@ -414,7 +468,6 @@ setParameters <- function(path=NULL,
                           tmax=20,
                           growthRateStipeMax=cbind(c(194, 195, 58),
                                                    c(23, 21, 10)), # Kain 1976
-                          # growthRateStipeMax=c(74, 74, 29), # Rinde & Sjotun 2005 southern pop
                           growthRateFrond=cbind(c(1787, 2299, 3979)/1e4,
                                                 c(179, 397, 417)/1e4), # m^2/plant/growing season
                           frondAreaMax=5500/1e4,
@@ -484,11 +537,18 @@ setParameters <- function(path=NULL,
 
 
 
+#' Simulate landscape for a covariate
+#'
+#' @param grid.sf Grid sf object
+#' @param var.sf Covariate sf object (element of loadCovariates_full() output)
+#' @param nYr Number of years to simulate
+#' @param colName Name of column within var.sf with focal covariate
+#'
+#' @return
+#' @export
+#'
+#' @examples
 simulateLandscape <- function(grid.sf, var.sf, nYr, colName) {
-  # grid.sf: base grid
-  # var.sf: variable
-  # colName: column name with variable in var.sf
-  # nYr: number of years to simulate
   library(mvtnorm)
   # pair var with grid, then extract to matrix
   var.mx <- grid.sf %>% select(id) %>%
@@ -533,6 +593,23 @@ simulateLandscape <- function(grid.sf, var.sf, nYr, colName) {
 # simulation wrappers -----------------------------------------------------
 
 
+#' Simulate multiple depths within one cell
+#'
+#' @param x Index for parLapply
+#' @param grid.i Dataframe with row for each grid cell
+#' @param grid.sim Simulated grid
+#' @param grid.id Simulated grid id
+#' @param gridRes Grid resolution
+#' @param pars.sim List of parameters
+#' @param surv.df Survival rate dataframe
+#' @param fecund.df Settlement dataframe
+#' @param lm.fit List of model fits
+#' @param lm.mnsd List of mn, sd to de-center and de-scale lm predictions
+#'
+#' @return
+#' @export
+#'
+#' @examples
 simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, grid.id=NA, gridRes, 
                                 pars.sim, surv.df, fecund.df, lm.fit, lm.mnsd) {
   library(glue); library(lubridate); library(sf); library(brms)
@@ -626,6 +703,20 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, grid.id=NA, gridRes,
 
 
 
+#' Title
+#'
+#' @param x Index for parLapply
+#' @param grid.i Dataframe with row for each grid cell
+#' @param gridRes Grid resolution
+#' @param pars.sens List of parameters
+#' @param lm.fit List of model fits
+#' @param lm.mnsd List of mn, sd to de-center and de-scale lm predictions
+#' @param parSets List of parameter values
+#'
+#' @return
+#' @export
+#'
+#' @examples
 simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens, 
                                            lm.fit, lm.mnsd, parSets) {
   library(glue); library(lubridate); library(sf); library(brms)
@@ -851,7 +942,24 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
 
 
 
-runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params, brt.dir, resp=NULL) {
+#' Title
+#'
+#' @param x Index for parLapply
+#' @param pop.f Vector of files with population output
+#' @param mass.f Vector of files with biomass output
+#' @param parSets List of parameter values
+#' @param grid.i Dataframe with grid information
+#' @param meta.cols Deprecated
+#' @param params Vector of parameters to evaluate
+#' @param brt.dir BRT output directory
+#' @param resp Vector of response variables to evaluate
+#'
+#' @return
+#' @export
+#'
+#' @examples
+runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params, 
+                    brt.dir, resp=NULL) {
   library(glue); library(tidyverse)
   sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
   siminfo <- str_remove(str_split_fixed(pop.f[x], "pop_", 2)[,2], ".rds")
