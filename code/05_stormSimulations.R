@@ -61,7 +61,7 @@ pars.sim$storms <- data.ls$year_stormIndex$stormIndex
 # simulate landscapes if needed
 if(pars.sim$landscape=="dynamic") {
   if(gridRemake) {
-    covars.full <- loadCovariates_full(loadFile=glue("data{sep}covarFull_ls.rds"))
+    covars.full <- loadCovariates_full(loadFile=glue("data{sep}covarFull_ls_reproj.rds"))
     for(i in 1:nSimGrid) {
       grid.sf %>% select(id) %>%
         simulateLandscape(covars.full$sstDayGrow, pars.sim$tmax, "SST") %>%
