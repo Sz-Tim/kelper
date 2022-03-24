@@ -28,10 +28,10 @@ parSets.f <- glue("000_paramSets_exposure_")
 # switches & settings
 rerun <- T
 reanalyse <- T
-gridRes <- c(0.1, 0.25)[2]
+gridRes <- c(0.1, 0.25)[1]
 nCores <- 50
 options(mc.cores=nCores)
-pars.sens <- list(nParDraws=5e3,
+pars.sens <- list(nParDraws=1e3,
                   depths=c(2, 15),
                   tmax=30,
                   tskip=10,
