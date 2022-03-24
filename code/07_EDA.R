@@ -20,9 +20,17 @@ sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 data.dir <- glue("data{sep}raw{sep}digitized{sep}")
 supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
 out.dir <- glue("out{sep}storms{sep}")
+sens.dir <- glue("out{sep}sensitivity{sep}")
 
 # switches & settings
 gridRes <- 0.1
+
+# plot themes, etc
+map_base.gg <- ggplot() +
+  theme(legend.position="bottom", 
+        panel.grid=element_blank()) +
+  scale_x_continuous(breaks=c(-8,0)) +
+  scale_y_continuous(breaks=c(52, 58)) 
 
 
 
@@ -101,8 +109,11 @@ ggsave(glue("figs{sep}regr{sep}condEff_7b_{gridRes}.png"), width=9, height=4)
 
 sim.title <- glue("{gridRes} arc-sec grid")
 grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
-  select(id, geom, PAR_surface) %>% 
+  # select(id, geom, PAR_surface) %>%
   filter(id > ifelse(gridRes==0.1, 5, 2))
+grid.i <- grid.sf %>% st_drop_geometry() %>%
+  rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn) %>%
+  select(id, SST, KD, PAR, fetch, fetchCat)
 pop.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}.rds")) %>% filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2))
 pop.sum <- readRDS(glue("summaries{sep}pop_sum_{gridRes}.rds")) %>% filter(month!=6) %>% 
@@ -114,6 +125,7 @@ mass.sum <- readRDS(glue("summaries{sep}mass_sum_{gridRes}.rds")) %>% filter(mon
   filter(id > ifelse(gridRes==0.1, 5, 2))
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
 obs.ls <- readRDS(glue("data{sep}dfs_{gridRes}.rds"))
+data.ls <- compileDatasets(data.dir, supp.f)
 
 
 
@@ -219,11 +231,6 @@ pop.sum.sf_canopy <- pop.sum.sf %>% filter(stage=="canopy") %>%
 mass.sum.sf_canopy <- mass.sum.sf %>% 
   mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
          month=month.name[month])
-map_base.gg <- ggplot() +
-  theme(legend.position="bottom", 
-        panel.grid=element_blank()) +
-  scale_x_continuous(breaks=c(-8,0)) +
-  scale_y_continuous(breaks=c(52, 58)) 
 
 
 # * N: all months, landscapes, depths  ------------------------------------
@@ -608,77 +615,6 @@ mass.sum %>% ungroup %>%
 
 
 
-# I think this doesn't really make sense because of the open settlement. Bummer.
-pop.df %>% filter(stage=="canopy") %>%
-  filter(month==1) %>% 
-  filter(id %in% samp$id) %>%
-  group_by(id, depth, landscape, stochParams, sim) %>%
-  mutate(lambda=N/lag(N, 1)) %>%
-  ggplot(aes(log(lambda), colour=depth, group=depth)) + geom_density() + 
-  scale_colour_viridis_c(direction=-1) + 
-  facet_grid(id~landscape, scales="free")
-
-pop.df %>% filter(stage=="canopy") %>%
-  filter(month==1) %>% 
-  group_by(id, depth, landscape, stochParams, sim) %>%
-  mutate(lambda=N/lag(N, 1)) %>%
-  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
-  ggplot(aes(mnLogLambda, colour=depth, group=depth)) + geom_density() + 
-  scale_colour_viridis_c(direction=-1) + 
-  facet_grid(stochParams~landscape, scales="free")
-
-pop.df %>% filter(stage=="canopy") %>%
-  filter(month==1) %>% 
-  group_by(id, depth, landscape, stochParams, sim) %>%
-  mutate(lambda=N/lag(N, 1)) %>%
-  filter(lambda < 2.5) %>%
-  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
-  full_join(grid.sf, .) %>%
-  ggplot(aes(fill=sign(mnLogLambda) * (abs(mnLogLambda) > 0.05))) + geom_sf(colour=NA) +
-  scale_fill_gradient2(low="red", high="blue", mid="grey70") +
-  facet_grid(landscape*stochParams~depth)
-pop.df %>% filter(stage=="canopy") %>%
-  filter(month==1) %>% 
-  group_by(id, depth, landscape, stochParams, sim) %>%
-  mutate(lambda=N/lag(N, 1)) %>%
-  filter(lambda < 2.5) %>%
-  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
-  full_join(grid.sf, .) %>%
-  ggplot(aes(fill=mnLogLambda > -0.05)) + geom_sf(colour=NA) +
-  facet_grid(landscape*stochParams~depth)
-pop.df %>% filter(stage=="canopy") %>%
-  filter(month==1) %>% 
-  group_by(id, depth, landscape, stochParams, sim) %>%
-  mutate(lambda=N/lag(N, 1)) %>%
-  filter(lambda < 2.5) %>%
-  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
-  full_join(grid.sf, .) %>%
-  ggplot(aes(fill=mnLogLambda>0)) + geom_sf(colour=NA) +
-  facet_grid(landscape*stochParams~depth)
-
-pop.df %>% filter(stage=="canopy") %>%
-  filter(month==1) %>% 
-  group_by(id, depth, landscape, stochParams, sim) %>%
-  mutate(lambda=N/lag(N, 1)) %>%
-  filter(lambda < 2.5) %>%
-  summarise(mnLogLambda=mean(log(lambda), na.rm=T)) %>%
-  full_join(grid.sf, .) %>%
-  ggplot(aes(fill=mnLogLambda)) + geom_sf(colour=NA) +
-  scale_fill_gradient2() +
-  facet_grid(landscape*stochParams~depth)
-pop.df %>% filter(stage=="canopy") %>%
-  filter(month==1) %>% 
-  group_by(id, depth, landscape, stochParams, sim) %>%
-  mutate(lambda=N/lag(N, 1)) %>%
-  summarise(sdLogLambda=sd(log(lambda), na.rm=T)) %>%
-  full_join(grid.sf, .) %>%
-  ggplot(aes(fill=sdLogLambda)) + geom_sf(colour=NA) +
-  scale_fill_viridis_c() +
-  facet_grid(landscape*stochParams~depth)
-
-
-
-
 
 # animations --------------------------------------------------------------
 
@@ -751,3 +687,729 @@ anim_save(glue("figs{sep}biomass_Jan_{gridRes}.gif"),
 
 
 
+
+
+
+
+
+
+
+# sensitivity analysis ----------------------------------------------------
+
+
+ri.df <- read_csv(glue("{sens.dir}{sep}RelInf_{gridRes}.csv")) %>%
+  group_by(response, id, month, depth) %>%
+  filter(smp==max(smp), td==max(td))
+stages <- c("Canopy", "Recruits", "Subcanopy")
+stages_ord <- c("Canopy", "Subcanopy", "Recruits")
+sens.param <- tibble(messy=sort(unique(ri.df$var)),
+                     full=c("Density shape", 
+                            paste("Frond growth:", stages),
+                            paste("Stipe growth:", stages),
+                            "Erosion", "Settlement", 
+                            paste("Survival:", stages)),
+                     eq=c("theta", 
+                          paste0("omega[", stages, "]"),
+                          paste0("gamma[", stages, "]"),
+                          "epsilon", "z",
+                          paste0("s[", stages, "]"))) %>%
+  mutate(eq=paste0("italic(", eq, ")")) %>%
+  mutate(eq=factor(eq, 
+                   levels=c("italic(epsilon)",
+                            "italic(theta)", 
+                            "italic(z)",
+                            paste0("italic(omega[", rev(stages_ord), "])"),
+                            paste0("italic(gamma[", rev(stages_ord), "])"),
+                            paste0("italic(s[", rev(stages_ord), "])")
+                            )))
+
+ri.df %>%
+  filter(month=="july") %>%
+  group_by(var, month, depth, response) %>%
+  summarise(rel.inf=mean(rel.inf*100)) %>%
+  ungroup %>%
+  mutate(response=factor(response, levels=c("biomass_mn", "biomass_sd"),
+                         labels=c("Mean", "Interannual sd")),
+         depth=as.numeric(str_remove(depth, "m")),
+         param=sens.param$eq[match(var, sens.param$messy)]) %>%
+  ggplot(aes(param, rel.inf, fill=depth, group=as.factor(depth))) +
+  geom_bar(stat="identity", position="dodge", colour="grey30", size=0.25) +
+  facet_grid(.~response) + coord_flip() +
+  scale_fill_viridis_c("Depth (m)", direction=-1) +
+  scale_x_discrete(labels=scales::parse_format()) +
+  scale_y_continuous(breaks=c(0, 20, 40)) + 
+  theme_classic() +
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"),
+        legend.title=element_text(size=11),
+        axis.text.y=element_text(size=12), 
+        strip.text=element_text(size=11), 
+        plot.title=element_text(size=12)) +
+  labs(y="Mean relative influence among cells", x="", 
+       title="Canopy biomass sensitivity")
+ggsave(glue("figs{sep}pub{sep}sensitivity_bar_mnAmongCells.png"), width=7, height=4, dpi=300)
+
+ri.df %>%
+  filter(month=="july") %>%
+  group_by(var, month, depth, response) %>%
+  summarise(rel.inf=sd(rel.inf*100)) %>%
+  ungroup %>%
+  mutate(response=factor(response, levels=c("biomass_mn", "biomass_sd"),
+                         labels=c("Mean", "Interannual sd")),
+         depth=as.numeric(str_remove(depth, "m")),
+         param=sens.param$eq[match(var, sens.param$messy)]) %>%
+  ggplot(aes(param, rel.inf, fill=depth, group=as.factor(depth))) +
+  geom_bar(stat="identity", position="dodge", colour="grey30", size=0.25) +
+  facet_grid(.~response) + coord_flip() +
+  scale_fill_viridis_c("Depth (m)", direction=-1) +
+  scale_x_discrete(labels=scales::parse_format()) +
+  scale_y_continuous(breaks=c(0, 10, 20)) + 
+  theme_classic() + 
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"),
+        legend.title=element_text(size=11),
+        axis.text.y=element_text(size=12), 
+        strip.text=element_text(size=11), 
+        plot.title=element_text(size=12)) +
+  labs(y="Standard deviation in relative influence among cells", x="",
+       title="Canopy biomass sensitivity")
+ggsave(glue("figs{sep}pub{sep}sensitivity_bar_sdAmongCells.png"), width=7, height=4, dpi=300)
+
+
+ri.df %>% filter(month=='july') %>% filter(response=="biomass_mn") %>%
+  group_by(var) %>%
+  mutate(max_ri=max(rel.inf)) %>%
+  ungroup %>%
+  filter(max_ri > 0.1) %>%
+  mutate(response=factor(response, levels=c("biomass_mn", "biomass_sd"),
+                         labels=c("Mean", "Interannual sd")),
+         depth=factor(depth, levels=paste0(c(2,5,10,15,20),"m")),
+         param=sens.param$eq[match(var, sens.param$messy)]) %>%
+  left_join(grid.sf, .) %>%
+  ggplot(aes(fill=log10(rel.inf*100))) +
+  geom_sf(colour=NA) +
+  scale_fill_viridis_c(expression(log[10](RI)), option="cividis", limits=c(NA,2)) +
+  theme_classic() + 
+  theme(axis.text=element_blank()) +
+  facet_grid(response*depth~param, 
+             labeller=labeller(response=label_value, depth=label_value, param=label_parsed))
+ggsave(glue("figs{sep}pub{sep}sensitivity_map.png"), width=9, height=6, dpi=300)
+
+
+
+
+ri.df %>% filter(response=="biomass_mn") %>%
+  right_join(grid.i, .) %>%
+  ggplot(aes(rel.inf, colour=as.factor(fetchCat))) +
+  geom_density() +
+  facet_wrap(~depth*month*var, scales="free_y", ncol=n_distinct(ri.df$var))
+
+
+ri.df %>%
+  right_join(grid.i, .) %>%
+  ggplot(aes(fetch, rel.inf, colour=paste(month, depth))) + geom_point(shape=1) +
+  facet_grid(response~var)
+
+
+test.df <- read_csv("temp/test_simGridOut.csv")
+
+samp_id <- sample(unique(test.df$id), 4)
+
+test.df %>% filter(id %in% samp_id) %>% 
+  left_join(., grid.i, by="id") %>%
+  mutate(covar=glue("SST: {round(SST,1)}, PAR: {round(PAR,1)}, ",
+                    "KD: {round(KD,1)}, fetch: {round(fetch,1)}")) %>%
+  ggplot(aes(date, biomass_md, group=depth, colour=depth, fill=depth)) + 
+  # geom_ribbon(aes(ymin=biomass_10, ymax=biomass_90),
+  #             alpha=0.5, colour=NA) +
+  geom_ribbon(aes(ymin=biomass_25, ymax=biomass_75),
+              alpha=0.5, colour=NA) +
+  geom_line() +
+  stat_smooth(data=data.ls$year_stormIndex, 
+              aes(date(paste0(year, "-01-01")), (stormIndex*10+10)),
+              se=F, method="loess", formula=y~x, span=0.5, linetype=2) +
+  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
+  scale_fill_viridis_c("Depth (m)", direction=-1, end=0.95) +
+  scale_x_date(breaks=date(c("1950-01-01", "1975-01-01", "2000-01-01")),
+               date_labels="%Y") +
+  facet_wrap(~covar, ncol=1, dir="h") + theme_classic() + 
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
+  labs(x="", y="Canopy biomass (kg)")
+ggsave("figs/storm/timeseries_biomass.png", width=3, height=8, dpi=200)
+
+test.df %>% filter(id %in% samp_id) %>%
+  ggplot(aes(date, biomass_md, group=depth, colour=depth)) + 
+  geom_line() + 
+  stat_smooth(method="loess", formula=y~x, se=F, span=0.25) +
+  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
+  scale_x_date(breaks=date(c("1950-01-01", "1975-01-01", "2000-01-01")),
+               date_labels="%Y") +
+  facet_wrap(~id) + theme_classic() + 
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
+  labs(y="Mean biomass")
+
+
+nLags <- 15
+stormIndexLag <- data.ls$year_stormIndex %>% select(year) %>%
+  bind_cols(imap_dfc(setNames(1:nLags, paste0("lag", 1:nLags)), 
+                     ~lag(data.ls$year_stormIndex$stormIndex, .x)))
+  
+stormLag_md.df <- test.df %>% 
+  left_join(., rbind(stormIndexLag %>%
+                       mutate(date=date(paste0(year, "-01-01"))),
+                     stormIndexLag %>%
+                       mutate(date=date(paste0(year, "-07-01")))) %>%
+              select(date, starts_with("lag"))) %>%
+  mutate(month=month(date)) %>%
+  group_by(id, depth, month) %>%
+  mutate(biomass_md=c(scale(biomass_md))) %>%
+  summarise(across(starts_with("lag"), ~coef(lm(biomass_md~.x))[2], .names="b_{.col}")) %>%
+  ungroup %>%
+  pivot_longer(starts_with("b_"), names_to="lag", values_to="b") %>%
+  mutate(lag=as.numeric(str_remove(lag, "b_lag"))) %>%
+  left_join(grid.sf, .) %>%
+  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
+         month=month.name[month])
+
+b_rng <- range(stormLag_md.df$b)
+map_base.gg +  
+  geom_sf(data=stormLag_md.df %>% 
+            filter(depth %in% paste0(c(2,5,10), "m")) %>%
+            filter(month=="January") %>%
+            filter(lag < 11), 
+          aes(fill=b), colour=NA) +
+  scale_fill_gradient2("Standardized slope", mid="grey99", limits=b_rng) +
+  facet_grid(depth~lag) + 
+  theme_classic() + 
+  ggtitle("Effect of storm severity on median January canopy biomass") +
+  theme(legend.key.height=unit(0.25, "cm"),
+        legend.position="bottom") +
+  guides(fill=guide_colorbar(title.position="top"))
+ggsave(glue("figs{sep}pub{sep}map_stormEffect_md_Jan.png"), width=11, height=6, dpi=300)
+
+map_base.gg +  
+  geom_sf(data=stormLag_md.df %>% 
+            filter(depth %in% paste0(c(2,5,10), "m")) %>%
+            filter(month=="July") %>%
+            filter(lag < 11), 
+          aes(fill=b), colour=NA) +
+  scale_fill_gradient2("Standardized slope", mid="grey99", limits=b_rng) +
+  facet_grid(depth~lag) + 
+  theme_classic() + 
+  ggtitle("Effect of storm severity on median July canopy biomass") +
+  theme(legend.key.height=unit(0.25, "cm"),
+        legend.position="bottom") 
+ggsave(glue("figs{sep}pub{sep}map_stormEffect_md_Jul.png"), width=11, height=6, dpi=300)
+
+stormLag_md.df %>% st_drop_geometry() %>%
+  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
+  group_by(depth, lag, month) %>%
+  summarise(q025=quantile(b, probs=0.025),
+            q10=quantile(b, probs=0.1),
+            q25=quantile(b, probs=0.25),
+            q50=quantile(b, probs=0.5),
+            q75=quantile(b, probs=0.75),
+            q90=quantile(b, probs=0.9),
+            q975=quantile(b, probs=0.975)) %>%
+  ggplot(aes(lag, colour=month)) +
+  geom_hline(yintercept=0, colour="grey80", size=0.25) +
+  geom_linerange(aes(ymin=q025, ymax=q975), size=0.25, position=position_dodge(width=0.6)) +
+  geom_linerange(aes(ymin=q10, ymax=q90), size=0.5, position=position_dodge(width=0.6)) +
+  geom_linerange(aes(ymin=q25, ymax=q75), size=1, position=position_dodge(width=0.6)) +
+  geom_point(aes(y=q50), position=position_dodge(width=0.6), shape=1) +
+  scale_colour_manual("Month", values=c("azure4", "goldenrod3")) +
+  facet_grid(depth~.) +
+  scale_x_continuous(breaks=c(5, 10, 15)) +
+  theme_classic() + theme(legend.position="bottom") +
+  labs(x="Lag (years)", y="Storm severity effect on biomass (standardized slope)")
+ggsave(glue("figs{sep}pub{sep}stormEffect_caterpillar.png"), width=3.5, height=7, dpi=300)
+
+stormLag_md.df %>% st_drop_geometry() %>%
+  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
+  group_by(depth, lag, month) %>%
+  summarise(q025=quantile(b, probs=0.025),
+            q10=quantile(b, probs=0.1),
+            q25=quantile(b, probs=0.25),
+            q50=quantile(b, probs=0.5),
+            q75=quantile(b, probs=0.75),
+            q90=quantile(b, probs=0.9),
+            q975=quantile(b, probs=0.975)) %>%
+  ggplot(aes(lag, colour=month, fill=month)) +
+  geom_hline(yintercept=0, colour="grey80", size=0.25) +
+  # geom_ribbon(aes(ymin=q025, ymax=q975), alpha=0.3, colour=NA) +
+  geom_ribbon(aes(ymin=q10, ymax=q90), alpha=0.3, colour=NA) +
+  # geom_ribbon(aes(ymin=q25, ymax=q75), alpha=0.3, colour=NA) +
+  geom_line(aes(y=q50)) +
+  scale_colour_manual("Month", values=c("azure4", "goldenrod3")) +
+  scale_fill_manual("Month", values=c("azure4", "goldenrod3")) +
+  facet_grid(depth~.) +
+  scale_x_continuous(breaks=c(5, 10, 15)) +
+  theme_classic() + theme(legend.position="bottom") +
+  labs(x="Lag (years)", 
+       y="Storm severity effect on biomass\n(standardized slope: median + middle 80%)")
+ggsave(glue("figs{sep}pub{sep}stormEffect_ribbon.png"), width=3.5, height=7, dpi=300)
+
+# Spaghetti: looks like this is highly dependent on fetch category
+# stormLag_md.df %>% st_drop_geometry() %>%
+#   filter(depth %in% paste0(c(2,5,10,15), "m")) %>% filter(month=="July") %>%
+#   ggplot(aes(lag, b, group=id, colour=factor(fetchCat))) + 
+#   geom_line(alpha=0.1) +
+#   facet_grid(depth~fetchCat) +
+#   scale_colour_brewer(type="qual", palette=2) +
+#   theme_classic() + guides(colour=guide_legend(override.aes=list(alpha=1)))
+
+stormLag_md.df %>% st_drop_geometry() %>%
+  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
+  group_by(depth, lag, month, fetchCat) %>%
+  summarise(q025=quantile(b, probs=0.025),
+            q10=quantile(b, probs=0.1),
+            q25=quantile(b, probs=0.25),
+            q50=quantile(b, probs=0.5),
+            q75=quantile(b, probs=0.75),
+            q90=quantile(b, probs=0.9),
+            q975=quantile(b, probs=0.975)) %>%
+  ggplot(aes(lag, colour=factor(fetchCat))) +
+  geom_hline(yintercept=0, colour="grey80", size=0.25) +
+  geom_linerange(aes(ymin=q025, ymax=q975), size=0.25, position=position_dodge(width=0.6)) +
+  geom_linerange(aes(ymin=q10, ymax=q90), size=0.5, position=position_dodge(width=0.6)) +
+  geom_linerange(aes(ymin=q25, ymax=q75), size=1, position=position_dodge(width=0.6)) +
+  geom_point(aes(y=q50), position=position_dodge(width=0.6), shape=1) +
+  scale_colour_viridis_d("Wave exposure", option="B", end=0.8, labels=c("Low", "Med", "High")) +
+  facet_grid(depth~month) +
+  scale_x_continuous(breaks=c(5, 10, 15)) +
+  theme_classic() + theme(legend.position="bottom") +
+  labs(x="Lag (years)", y="Storm severity effect on biomass (standardized slope)")
+ggsave(glue("figs{sep}pub{sep}stormEffect_fetch_caterpillar.png"), width=4.5, height=7, dpi=300)
+
+
+
+stormLag_md.df %>% st_drop_geometry() %>%
+  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
+  group_by(depth, lag, month, fetchCat) %>%
+  summarise(q025=quantile(b, probs=0.025),
+            q10=quantile(b, probs=0.1),
+            q25=quantile(b, probs=0.25),
+            q50=quantile(b, probs=0.5),
+            q75=quantile(b, probs=0.75),
+            q90=quantile(b, probs=0.9),
+            q975=quantile(b, probs=0.975)) %>%
+  ggplot(aes(lag, fill=factor(fetchCat), colour=factor(fetchCat))) +
+  geom_hline(yintercept=0, colour="grey80", size=0.25) +
+  # geom_ribbon(aes(ymin=q025, ymax=q975), alpha=0.3, colour=NA) +
+  geom_ribbon(aes(ymin=q10, ymax=q90), alpha=0.3, colour=NA) +
+  # geom_ribbon(aes(ymin=q25, ymax=q75), alpha=0.3, colour=NA) +
+  geom_line(aes(y=q50)) +
+  scale_fill_viridis_d("Wave exposure", option="B", end=0.8, labels=c("Low", "Med", "High")) +
+  scale_colour_viridis_d("Wave exposure", option="B", end=0.8, labels=c("Low", "Med", "High")) +
+  facet_grid(depth~month) +
+  scale_x_continuous(breaks=c(5, 10, 15)) +
+  theme_classic() + theme(legend.position="bottom") +
+  labs(x="Lag (years)", 
+       y="Storm severity effect on biomass\n(standardized slope: median + middle 80%)")
+ggsave(glue("figs{sep}pub{sep}stormEffect_fetch_ribbon.png"), width=4.5, height=7, dpi=300)
+
+stormLag_md.df %>% st_drop_geometry() %>%
+  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
+  group_by(depth, lag, month, fetchCat) %>%
+  summarise(q025=quantile(b, probs=0.025),
+            q10=quantile(b, probs=0.1),
+            q25=quantile(b, probs=0.25),
+            q50=quantile(b, probs=0.5),
+            q75=quantile(b, probs=0.75),
+            q90=quantile(b, probs=0.9),
+            q975=quantile(b, probs=0.975)) %>%
+  ggplot(aes(lag, colour=month, fill=month)) +
+  geom_hline(yintercept=0, colour="grey80", size=0.25) +
+  # geom_ribbon(aes(ymin=q025, ymax=q975), alpha=0.3, colour=NA) +
+  geom_ribbon(aes(ymin=q10, ymax=q90), alpha=0.3, colour=NA) +
+  # geom_ribbon(aes(ymin=q25, ymax=q75), alpha=0.3, colour=NA) +
+  geom_line(aes(y=q50)) +
+  scale_colour_manual("Month", values=c("azure4", "goldenrod3")) +
+  scale_fill_manual("Month", values=c("azure4", "goldenrod3")) +
+  facet_grid(depth~fetchCat) +
+  scale_x_continuous(breaks=c(5, 10, 15)) +
+  theme_classic() + theme(legend.position="bottom") +
+  labs(x="Lag (years)", 
+       y="Storm severity effect on biomass\n(standardized slope: median + middle 80%)")
+ggsave(glue("figs{sep}pub{sep}stormEffect_byFetch_ribbon.png"), width=6, height=7, dpi=300)
+
+
+stormLag_sd.df <- test.df %>%
+  left_join(., rbind(data.ls$year_stormIndex %>%
+                       mutate(date=date(paste0(year, "-01-01")),
+                              stormIndex_lag1=lag(stormIndex, 1),
+                              stormIndex_lag2=lag(stormIndex, 2),
+                              stormIndex_lag3=lag(stormIndex, 3),
+                              stormIndex_lag4=lag(stormIndex, 4),
+                              stormIndex_lag5=lag(stormIndex, 5),
+                              stormIndex_lag6=lag(stormIndex, 6)),
+                     data.ls$year_stormIndex %>%
+                       mutate(date=date(paste0(year, "-07-01")),
+                              stormIndex_lag1=lag(stormIndex, 1),
+                              stormIndex_lag2=lag(stormIndex, 2),
+                              stormIndex_lag3=lag(stormIndex, 3),
+                              stormIndex_lag4=lag(stormIndex, 4),
+                              stormIndex_lag5=lag(stormIndex, 5),
+                              stormIndex_lag6=lag(stormIndex, 6))) %>%
+              select(date, starts_with("stormIndex"))) %>%
+  mutate(month=month(date)) %>%
+  group_by(id, depth, month) %>%
+  mutate(biomass_sd=c(scale(log(biomass_sd)))) %>%
+  summarise(b_lag0=coef(lm(biomass_sd~stormIndex))[2],
+            b_lag1=coef(lm(biomass_sd~stormIndex_lag1))[2],
+            b_lag2=coef(lm(biomass_sd~stormIndex_lag2))[2],
+            b_lag3=coef(lm(biomass_sd~stormIndex_lag3))[2],
+            b_lag4=coef(lm(biomass_sd~stormIndex_lag4))[2],
+            b_lag5=coef(lm(biomass_sd~stormIndex_lag5))[2],
+            b_lag6=coef(lm(biomass_sd~stormIndex_lag6))[2]) %>%
+  ungroup %>%
+  pivot_longer(starts_with("b_lag"), names_to="lag", values_to="b") %>%
+  mutate(lag=paste(str_remove(lag, "b_lag"), "yr")) %>%
+  left_join(grid.sf, .) %>%
+  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")))
+
+b_rng <- range(stormLag_sd.df$b)
+map_base.gg +  
+  geom_sf(data=stormLag_sd.df %>% 
+            filter(depth %in% paste0(c(2,5,10), "m")) %>%
+            filter(month==1), 
+          aes(fill=b), colour=NA) +
+  scale_fill_gradient2(mid="grey99", limits=b_rng) +
+  facet_grid(depth~lag) + 
+  theme_classic() + 
+  ggtitle("Effect of storm severity on sd January canopy biomass") +
+  theme(legend.key.height=unit(0.25, "cm"),
+        legend.position="bottom")
+
+map_base.gg +  
+  geom_sf(data=stormLag_md.df %>% 
+            filter(depth %in% paste0(c(2,5,10), "m")) %>%
+            filter(month==7), 
+          aes(fill=b), colour=NA) +
+  scale_fill_gradient2(mid="grey99", limits=b_rng) +
+  facet_grid(depth~lag) + 
+  theme_classic() + 
+  ggtitle("Effect of storm severity on sd July canopy biomass") +
+  theme(legend.key.height=unit(0.25, "cm"),
+        legend.position="bottom")
+  
+
+
+
+
+
+
+
+
+
+
+# covariates --------------------------------------------------------------
+
+
+
+
+
+ggplot(data.ls$year_stormIndex, aes(year, stormIndex)) + 
+  stat_smooth(method="loess", colour="grey", se=F, span=0.5, size=0.5) +
+  geom_point() + geom_line(size=0.25) +
+  theme_classic() +
+  labs(x="Year", y="Storm index")
+ggsave(glue("figs{sep}pub{sep}stormIndex.png"), height=4, width=6, dpi=300)
+
+
+grid.long <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
+  filter(id > ifelse(gridRes==0.1, 5, 2)) %>%
+  rename(PAR=PAR_mn, SST=sstDay_mn, KD=KD_mn) %>%
+  mutate(PAR2=PAR*exp(-KD*2), PAR5=PAR*exp(-KD*5), PAR10=PAR*exp(-KD*10),
+         PAR15=PAR*exp(-KD*15), PAR20=PAR*exp(-KD*20)) %>%
+  select(id, SST, fetch, PAR, PAR2, PAR5, PAR10, PAR15, PAR20) %>%
+  pivot_longer(2:9, names_to="predictor", values_to="value") %>%
+  mutate(predictor=factor(predictor, 
+                          levels=c("SST", "fetch", "PAR", "PAR2",
+                                   "PAR5", "PAR10", "PAR15", "PAR20"),
+                          labels=c("SST (growing season)", "ln(fetch)",
+                                   "PAR (surface)", "PAR (2m)", "PAR (5m)",
+                                   "PAR (10m)", "PAR (15m)", "PAR (20m)")))
+
+sst.p <- map_base.gg +
+  geom_sf(data=filter(grid.long, predictor=="SST (growing season)"), 
+          colour=NA, aes(fill=value)) +
+  theme_classic() + scale_fill_viridis_c("°C", option="C") + 
+  ggtitle("SST (growing season)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+fetch.p <- map_base.gg + 
+  geom_sf(data=filter(grid.long, predictor=="ln(fetch)"), 
+          colour=NA, aes(fill=value)) +
+  theme_classic() + scale_fill_viridis_c("", option="B", end=0.9) + 
+  ggtitle("ln(wave fetch)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+PAR0.p <- map_base.gg + 
+  geom_sf(data=filter(grid.long, predictor=="PAR (surface)"), 
+          colour=NA, aes(fill=value)) +
+  # theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day))) +
+  theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day)), limits=c(0, 29)) +
+  ggtitle("PAR (surface)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+PAR2.p <- map_base.gg + 
+  geom_sf(data=filter(grid.long, predictor=="PAR (2m)"), 
+          colour=NA, aes(fill=value)) +
+  # theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day))) +
+  theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day)), limits=c(0, 29)) +
+  ggtitle("PAR (2m)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+PAR5.p <- map_base.gg + 
+  geom_sf(data=filter(grid.long, predictor=="PAR (5m)"), 
+          colour=NA, aes(fill=value)) +
+  # theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day))) +
+  theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day)), limits=c(0, 29)) +
+  ggtitle("PAR (5m)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+PAR10.p <- map_base.gg + 
+  geom_sf(data=filter(grid.long, predictor=="PAR (10m)"), 
+          colour=NA, aes(fill=value)) +
+  # theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day))) +
+  theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day)), limits=c(0, 29)) +
+  ggtitle("PAR (10m)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+PAR15.p <- map_base.gg + 
+  geom_sf(data=filter(grid.long, predictor=="PAR (15m)"), 
+          colour=NA, aes(fill=value)) +
+  # theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day))) +
+  theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day)), limits=c(0, 29)) +
+  ggtitle("PAR (15m)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+PAR20.p <- map_base.gg + 
+  geom_sf(data=filter(grid.long, predictor=="PAR (20m)"), 
+          colour=NA, aes(fill=value)) +
+  # theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day))) +
+  theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day)), limits=c(0, 29)) +
+  ggtitle("PAR (20m)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+fig_cov_a <- ggarrange(sst.p, fetch.p, nrow=1)
+fig_cov_b <- ggarrange(PAR0.p, PAR2.p, PAR5.p, PAR10.p, PAR15.p, PAR20.p, nrow=2, ncol=3,
+                       common.legend=T, legend="bottom")
+fig_cov_b_alt <- ggarrange(PAR0.p, PAR2.p, PAR5.p, PAR10.p, PAR15.p, PAR20.p, nrow=2, ncol=3,
+                       common.legend=F, legend="bottom")
+ggsave(glue("figs{sep}pub{sep}env_a.png"), fig_cov_a, width=6, height=4, dpi=300)
+ggsave(glue("figs{sep}pub{sep}env_b.png"), fig_cov_b, width=7.5, height=8, dpi=300)
+ggsave(glue("figs{sep}pub{sep}env_b_alt.png"), fig_cov_b_alt, width=8.5, height=8, dpi=300)
+
+
+
+# WARNING! THIS HAS NOT BEEN UPDATED AND WILL NOT WORK!
+w <- 18; h <- 8; dpi <- 200
+basePlot <- grid.sim %>% 
+  mutate(PAR2=PAR*exp(-KD*2), PAR5=PAR*exp(-KD*5), PAR10=PAR*exp(-KD*10),
+         PAR15=PAR*exp(-KD*15), PAR20=PAR*exp(-KD*20)) %>%
+  ggplot() + facet_wrap(~year, nrow=4) + 
+  theme(axis.text=element_blank(), legend.position="bottom")
+
+p <- basePlot + geom_sf(aes(fill=SST), colour=NA) + 
+  scale_fill_viridis_c("", option="C") + ggtitle("SST")
+ggsave(glue("figs{sep}sim_SST_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlot + geom_sf(aes(fill=PAR), colour=NA) + 
+  scale_fill_viridis_c("") + ggtitle("PAR (0m)")
+ggsave(glue("figs{sep}sim_PAR_00m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlot + geom_sf(aes(fill=PAR2), colour=NA) + 
+  scale_fill_viridis_c("") + ggtitle("PAR (2m)")
+ggsave(glue("figs{sep}sim_PAR_02m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlot + geom_sf(aes(fill=PAR5), colour=NA) + 
+  scale_fill_viridis_c("") + ggtitle("PAR (5m)")
+ggsave(glue("figs{sep}sim_PAR_05m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlot + geom_sf(aes(fill=PAR10), colour=NA) + 
+  scale_fill_viridis_c("") + ggtitle("PAR (10m)")
+ggsave(glue("figs{sep}sim_PAR_10m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlot + geom_sf(aes(fill=PAR15), colour=NA) + 
+  scale_fill_viridis_c("") + ggtitle("PAR (15m)")
+ggsave(glue("figs{sep}sim_PAR_15m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlot + geom_sf(aes(fill=PAR20), colour=NA) + 
+  scale_fill_viridis_c("") + ggtitle("PAR (20m)")
+ggsave(glue("figs{sep}sim_PAR_20m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+
+basePlotResid <- grid.sim %>% 
+  mutate(PAR2=PAR*exp(-KD*2), PAR5=PAR*exp(-KD*5), PAR10=PAR*exp(-KD*10),
+         PAR15=PAR*exp(-KD*15), PAR20=PAR*exp(-KD*20)) %>%
+  group_by(id) %>%
+  mutate(across(c("SST", starts_with("PAR")), list("resid"=~.x-mean(.x)))) %>%
+  ggplot() + facet_wrap(~year, nrow=4) + scale_fill_gradient2("") +
+  theme(axis.text=element_blank(), legend.position="bottom")
+
+p <- basePlotResid + geom_sf(aes(fill=SST_resid), colour=NA) + ggtitle("SST")
+ggsave(glue("figs{sep}resid_SST_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlotResid + geom_sf(aes(fill=PAR_resid), colour=NA) + ggtitle("PAR (0m)")
+ggsave(glue("figs{sep}resid_PAR_00m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlotResid + geom_sf(aes(fill=PAR2_resid), colour=NA) + ggtitle("PAR (2m)")
+ggsave(glue("figs{sep}resid_PAR_02m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlotResid + geom_sf(aes(fill=PAR5_resid), colour=NA) + ggtitle("PAR (5m)")
+ggsave(glue("figs{sep}resid_PAR_05m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlotResid + geom_sf(aes(fill=PAR10_resid), colour=NA) + ggtitle("PAR (10m)")
+ggsave(glue("figs{sep}resid_PAR_10m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlotResid + geom_sf(aes(fill=PAR15_resid), colour=NA) + ggtitle("PAR (15m)")
+ggsave(glue("figs{sep}resid_PAR_15m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- basePlotResid + geom_sf(aes(fill=PAR20_resid), colour=NA) + ggtitle("PAR (20m)")
+ggsave(glue("figs{sep}resid_PAR_20m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+w <- 6; h <- 8; dpi <- 200
+p <- ggplot(grid.sf) + geom_sf(aes(fill=fetch), colour=NA) + 
+  scale_fill_viridis_c("", option="B", end=0.9) + ggtitle("Fetch") +
+  theme(axis.text=element_blank(), legend.position="bottom")
+ggsave(glue("figs{sep}mn_fetch_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+p <- ggplot(grid.sf) + geom_sf(aes(fill=fetchCat), colour=NA) + 
+  scale_fill_viridis_c("", option="B", end=0.9) + ggtitle("Fetch category") +
+  theme(axis.text=element_blank(), legend.position="bottom")
+ggsave(glue("figs{sep}mn_fetchCat_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+
+rm(basePlot); rm(basePlotResid); rm(p)
+
+
+if(gridFigs) {
+  w <- 6; h <- 8; dpi <- 200
+  basePlot <- grid.sf %>% 
+    rename(PAR=PAR_mn, SST=sstDay_mn, KD=KD_mn) %>%
+    mutate(PAR2=PAR*exp(-KD*2), PAR5=PAR*exp(-KD*5), PAR10=PAR*exp(-KD*10),
+           PAR15=PAR*exp(-KD*15), PAR20=PAR*exp(-KD*20)) %>%
+    ggplot() + theme(axis.text=element_blank(), legend.position="bottom")
+  
+  p <- basePlot + geom_sf(aes(fill=fetch), colour=NA) + 
+    scale_fill_viridis_c("", option="B", end=0.9) + ggtitle("Fetch")
+  ggsave(glue("figs{sep}mn_fetch_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  p <- basePlot + geom_sf(aes(fill=fetchCat), colour=NA) + 
+    scale_fill_viridis_c("", option="B", end=0.9) + ggtitle("Fetch category")
+  ggsave(glue("figs{sep}mn_fetchCat_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  p <- basePlot + geom_sf(aes(fill=SST), colour=NA) + 
+    scale_fill_viridis_c("", option="C") + ggtitle("SST")
+  ggsave(glue("figs{sep}mn_SST_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  p <- basePlot + geom_sf(aes(fill=PAR), colour=NA) + 
+    scale_fill_viridis_c("") + ggtitle("PAR (0m)")
+  ggsave(glue("figs{sep}mn_PAR_00m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  p <- basePlot + geom_sf(aes(fill=PAR2), colour=NA) + 
+    scale_fill_viridis_c("") + ggtitle("PAR (2m)")
+  ggsave(glue("figs{sep}mn_PAR_02m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  p <- basePlot + geom_sf(aes(fill=PAR5), colour=NA) + 
+    scale_fill_viridis_c("") + ggtitle("PAR (5m)")
+  ggsave(glue("figs{sep}mn_PAR_05m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  p <- basePlot + geom_sf(aes(fill=PAR10), colour=NA) + 
+    scale_fill_viridis_c("") + ggtitle("PAR (10m)")
+  ggsave(glue("figs{sep}mn_PAR_10m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  p <- basePlot + geom_sf(aes(fill=PAR15), colour=NA) + 
+    scale_fill_viridis_c("") + ggtitle("PAR (15m)")
+  ggsave(glue("figs{sep}mn_PAR_15m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  p <- basePlot + geom_sf(aes(fill=PAR20), colour=NA) + 
+    scale_fill_viridis_c("") + ggtitle("PAR (20m)")
+  ggsave(glue("figs{sep}mn_PAR_20m_{gridRes}.png"), p, width=w, height=h, dpi=dpi)
+  
+  rm(basePlot); rm(p)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+# parameter distributions -------------------------------------------------
+
+# storm effects on survival rates
+par.rng <- readRDS(glue("{sens.dir}parameter_ranges.rds"))
+surv.rng <- par.rng %>% filter(param=="surv") %>%
+  group_by(exposure) %>% group_split()
+loss_mnPrec <- c(0.2340987, 90.1752) # mn, prec for beta distribution
+
+par.yr$loss <- qbeta(pnorm(pars.sim$storms, 0, 1), 
+                     prod(pars$lossRate), 
+                     (1-pars$lossRate[1])*pars$lossRate[2])
+par.yr$surv_strm <- apply(pars$survRate, 1, 
+                          function(x) pmax(0, 
+                                           pmin(1, 
+                                                qnorm(pnorm(-pars.sim$storms, 0, 1), 
+                                                      x[1], x[2]))))
+
+storm_effect.df <- data.ls$year_stormIndex %>%
+  select(year, stormIndex) %>%
+  mutate(surv_canopy_1=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[1]], stage=="canopy")$valMean,
+                             filter(surv.rng[[1]], stage=="canopy")$valSD),
+         surv_canopy_2=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[2]], stage=="canopy")$valMean,
+                             filter(surv.rng[[2]], stage=="canopy")$valSD),
+         surv_canopy_3=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[3]], stage=="canopy")$valMean,
+                             filter(surv.rng[[3]], stage=="canopy")$valSD),
+         surv_subcanopy_1=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[1]], stage=="subcanopy")$valMean,
+                             filter(surv.rng[[1]], stage=="subcanopy")$valSD),
+         surv_subcanopy_2=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[2]], stage=="subcanopy")$valMean,
+                             filter(surv.rng[[2]], stage=="subcanopy")$valSD),
+         surv_subcanopy_3=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[3]], stage=="subcanopy")$valMean,
+                             filter(surv.rng[[3]], stage=="subcanopy")$valSD),
+         surv_recruit_1=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[1]], stage=="recruits")$valMean,
+                             filter(surv.rng[[1]], stage=="recruits")$valSD),
+         surv_recruit_2=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[2]], stage=="recruits")$valMean,
+                             filter(surv.rng[[2]], stage=="recruits")$valSD),
+         surv_recruit_3=qnorm(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[3]], stage=="recruits")$valMean,
+                             filter(surv.rng[[3]], stage=="recruits")$valSD)) %>%
+  pivot_longer(3:11, names_to="param", values_to="value") %>%
+  mutate(stage=str_split_fixed(param, "_", 3)[,2] %>%
+           factor(levels=c("recruit", "subcanopy", "canopy")),
+         exposure=str_split_fixed(param, "_", 3)[,3] %>% 
+           factor(labels=c("Low", "Med", "High"))) %>%
+  mutate(param=paste0("italic(s[", stage, "])"),
+         value=sqrt(pmin(1, pmax(0, value)))) %>%
+  bind_rows(data.ls$year_stormIndex %>%
+              select(year, stormIndex) %>%
+              mutate(param="italic(epsilon)",
+                     exposure="Low",
+                     value=qbeta(pnorm(stormIndex, 0, 1),
+                                   prod(loss_mnPrec),
+                                   (1-loss_mnPrec[1])*loss_mnPrec[2]))) %>%
+  bind_rows(data.ls$year_stormIndex %>%
+              select(year, stormIndex) %>%
+              mutate(param="italic(epsilon)",
+                     exposure="Med",
+                     value=qbeta(pnorm(stormIndex, 0, 1),
+                                 prod(loss_mnPrec),
+                                 (1-loss_mnPrec[1])*loss_mnPrec[2]))) %>%
+  bind_rows(data.ls$year_stormIndex %>%
+              select(year, stormIndex) %>%
+              mutate(param="italic(epsilon)",
+                     exposure="High",
+                     value=qbeta(pnorm(stormIndex, 0, 1),
+                                 prod(loss_mnPrec),
+                                 (1-loss_mnPrec[1])*loss_mnPrec[2]))) %>%
+  mutate(param=factor(param, levels=rev(unique(param))),
+         exposure=factor(exposure, levels=c("Low", "Med", "High")))
+
+ggplot(storm_effect.df, aes(year, value, colour=param)) + 
+  geom_line() + 
+  theme_classic() +
+  scale_x_continuous(breaks=c(1950, 1975, 2000)) +
+  scale_y_continuous("Rate (non-growing season)", breaks=c(0, 0.5, 1)) +
+  scale_colour_manual("Parameter", 
+                      values=c("#bf812d", "#80cdc1", "#35978f", "#01665e"), 
+                      labels=scales::parse_format()) +
+  theme(axis.title.x=element_blank(),
+        legend.text.align=0) +
+  facet_grid(.~exposure) 
+ggsave(glue("figs{sep}pub{sep}stormEffect_parameters.png"), width=8, height=2.5, dpi=300)

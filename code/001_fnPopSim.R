@@ -5,6 +5,16 @@
 
 # Population simulation functions
 
+#' Simulate one population
+#'
+#' @param pars List of parameter values
+#' @param N0 Vector of initial density for each stage
+#' @param ndraws Number of draws from the posterior distribution to use
+#'
+#' @return
+#' @export
+#'
+#' @examples
 simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   
   library(tidyverse); library(brms)

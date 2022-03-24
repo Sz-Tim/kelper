@@ -196,6 +196,21 @@ mortDens <- function(propOccupiedSpace, mu0, mu1, linear) {
 
 
 
+#' Calculate biomass across years, seasons, and stages
+#'
+#' @param N Array with densities
+#' @param FAI Array with frond area indexes
+#' @param lwtStipe Vector of log stipe weight for each stage
+#' @param lmFit Fitted model for logWtFrond ~ logAreaFrond
+#' @param ndraws Number of draws from the posterior distribution to use
+#' @param env.df Dataframe with covariates for input
+#' @param scale.df Dataframe with mean, sd to de-center and de-scale
+#' @param stages Vector (integer) with stages to use in biomass calculation
+#'
+#' @return
+#' @export
+#'
+#' @examples
 calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df, stages=3) {
   stipeMass <- frondMass <- array(0, dim=dim(N))
   biomass <- matrix(0, nrow=dim(N)[2], ncol=dim(N)[3])
@@ -235,6 +250,18 @@ calcBiomass <- function(N, FAI, lwtStipe, lmFit, ndraws, env.df, scale.df, stage
 
 
 
+#' Generate natural scale prediction from fitted model
+#'
+#' @param mod Fitted model
+#' @param ndraws Number of draws from the posterior distribution to use
+#' @param new.df Dataframe with covariates for input
+#' @param scale.df Dataframe with mean, sd to de-center and de-scale
+#' @param y_var Response variable
+#'
+#' @return
+#' @export
+#'
+#' @examples
 getPrediction <- function(mod, ndraws, new.df, scale.df, y_var) {
   # center and scale predictors to match regression inputs
   for(i in 1:ncol(new.df)) {
