@@ -20,9 +20,17 @@ sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 data.dir <- glue("data{sep}raw{sep}digitized{sep}")
 supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
 out.dir <- glue("out{sep}storms{sep}")
+sens.dir <- glue("out{sep}sensitivity{sep}")
 
 # switches & settings
 gridRes <- 0.1
+
+# plot themes, etc
+map_base.gg <- ggplot() +
+  theme(legend.position="bottom", 
+        panel.grid=element_blank()) +
+  scale_x_continuous(breaks=c(-8,0)) +
+  scale_y_continuous(breaks=c(52, 58)) 
 
 
 
