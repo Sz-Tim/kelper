@@ -73,29 +73,29 @@ par.rng <- list(surv=surv.df %>%
                   mutate(stage=stageFrom,
                          valMean=1-rate_mn,
                          valSD=rate_sd,
-                         valMin=1-pmin(1, pmax(0, rate_mn+2*rate_sd)),
-                         valMax=1-pmin(1, pmax(0, rate_mn-2*rate_sd))) %>%
+                         valMin=1-pmin(1, pmax(0, qnorm(0.975, rate_mn, rate_sd))),
+                         valMax=1-pmin(1, pmax(0, qnorm(0.025, rate_mn, rate_sd)))) %>%
                   select(stage, valMean, valSD, valMin, valMax, exposure),
                 settlement=fecund.df %>%
                   mutate(valMean=rate_mn,
                          valSD=rate_sd,
-                         valMin=pmax(0, rate_mn-2*rate_sd),
-                         valMax=pmax(0, rate_mn+2*rate_sd)) %>%
+                         valMin=pmax(0, qnorm(0.025, rate_mn, rate_sd)),
+                         valMax=pmax(0, qnorm(0.975, rate_mn, rate_sd))) %>%
                   select(valMean, valSD, valMin, valMax, exposure),
                 growStipe=tibble(stage=c("recruits", "subcanopy", "canopy"),
                                  valMean=rate_stipe[,1],
                                  valSD=rate_stipe[,2],
-                                 valMin=apply(rate_stipe, 1, function(x) x[1]-2*x[2]),
-                                 valMax=apply(rate_stipe, 1, function(x) x[1]+2*x[2])),
+                                 valMin=apply(rate_stipe, 1, function(x) qnorm(0.025, x[1], x[2])),
+                                 valMax=apply(rate_stipe, 1, function(x) qnorm(0.975, x[1], x[2]))),
                 growFrond=tibble(stage=c("recruits", "subcanopy", "canopy"),
                                  valMean=rate_frond[,1],
                                  valSD=rate_frond[,2],
-                                 valMin=apply(rate_frond, 1, function(x) x[1]-2*x[2]),
-                                 valMax=apply(rate_frond, 1, function(x) x[1]+2*x[2])),
+                                 valMin=apply(rate_frond, 1, function(x) qnorm(0.025, x[1], x[2])),
+                                 valMax=apply(rate_frond, 1, function(x) qnorm(0.975, x[1], x[2]))),
                 loss=tibble(valMean=loss_mnPrec[1],
                             valMin=qbeta(0.025, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2]),
                             valMax=qbeta(0.975, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2])),
-                densityEffShape=tibble(valMean=1, valMin=0.5, valMax=2)) %>%
+                densityEffShape=tibble(valMean=1, valMin=0.5, valMax=1.5)) %>%
   imap_dfr(., ~.x %>% mutate(param=.y))
 saveRDS(par.rng, glue("{sens.dir}parameter_ranges.rds"))
 

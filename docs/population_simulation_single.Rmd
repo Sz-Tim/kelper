@@ -311,7 +311,7 @@ canopy <- data.ls$day_growthStipe %>% filter(ageGroup > 2) %>%
 #              fit=canopy.hm$fitted, 
 #              phase=canopy.hm$phase, amp=canopy.hm$amplitude)
 
-day_seq <- seq(ymd("1970-01-01"), ymd("1970-12-31"), by="day")
+day_seq <- seq(ymd("1970-01-01"), ymd("1970-06-30"), by="day")
 y <- (yday(day_seq)-1)/c(364,365)[leap_year(day_seq)+1]
 # pred.1 <- mean(hm.1$fit) + hm.1$a * cos(2*pi*y) + hm.1$b * sin(2*pi*y)
 # pred.2 <- mean(hm.2$fit) + hm.2$a * cos(2*pi*y) + hm.2$b * sin(2*pi*y)
@@ -321,16 +321,18 @@ y <- (yday(day_seq)-1)/c(364,365)[leap_year(day_seq)+1]
 #     round(c(sum(pred.1, na.rm=T), sum(pred.2, na.rm=T), sum(pred.3, na.rm=T))))
 
 pred.1 <- predict(loess(dailyGrowth ~ day, data=recruits), 
-        data.frame(day=yday(day_seq)))
+        data.frame(day=yday(day_seq)), se=T)
 pred.2 <- predict(loess(dailyGrowth ~ day, data=subcanopy), 
-        data.frame(day=yday(day_seq)))
+        data.frame(day=yday(day_seq)), se=T)
 pred.3 <- predict(loess(dailyGrowth ~ day, data=canopy), 
-        data.frame(day=yday(day_seq)))
+        data.frame(day=yday(day_seq)), se=T)
 cat("Maximum expected annual growth in stipe length (mm) loess model:\n", 
-    round(c(sum(pred.1, na.rm=T), sum(pred.2, na.rm=T), sum(pred.3, na.rm=T))))
+    round(sum(pred.1$fit, na.rm=T)), "+-", round(sum(pred.1$se.fit, na.rm=T)), "\n", 
+    round(sum(pred.2$fit, na.rm=T)), "+-", round(sum(pred.2$se.fit, na.rm=T)), "\n", 
+    round(sum(pred.3$fit, na.rm=T)), "+-", round(sum(pred.3$se.fit, na.rm=T)))
 
 
-tibble(date=day_seq, recruits=pred.1, subcanopy=pred.2, canopy=pred.3) %>%
+tibble(date=day_seq, recruits=pred.1$fit, subcanopy=pred.2$fit, canopy=pred.3$fit) %>%
   pivot_longer(2:4, names_to="stage", values_to="dailyGrowth") %>%
   mutate(stage=factor(stage, levels=c("canopy", "subcanopy", "recruits"))) %>%
   ggplot(aes(date, dailyGrowth, colour=stage)) + 
@@ -363,16 +365,18 @@ subcanopy <- frondAreaGrowth %>% filter(age > 0 & age < 3) %>%
 canopy <- frondAreaGrowth %>% filter(age > 2) %>%
   mutate(dailyGrowth=rate, stage="canopy", date=as_date(day))
 
-day_seq <- seq(ymd("1970-01-01"), ymd("1970-12-31"), by="day")
+day_seq <- seq(ymd("1970-01-01"), ymd("1970-06-30"), by="day")
 pred.1 <- predict(loess(dailyGrowth ~ day, data=recruits), 
-        data.frame(day=yday(day_seq)))
+        data.frame(day=yday(day_seq)), se=T)
 pred.2 <- predict(loess(dailyGrowth ~ day, data=subcanopy), 
-        data.frame(day=yday(day_seq)))
+        data.frame(day=yday(day_seq)), se=T)
 pred.3 <- predict(loess(dailyGrowth ~ day, data=canopy), 
-        data.frame(day=yday(day_seq)))
+        data.frame(day=yday(day_seq)), se=T)
 
-cat("Maximum expected annual growth in frond area (cm^2):\n", 
-    round(c(sum(pred.1, na.rm=T), sum(pred.2, na.rm=T), sum(pred.3, na.rm=T))))
+cat("Maximum expected annual growth in frond area (cm^2):\n",  
+    round(sum(pred.1$fit, na.rm=T)), "+-", round(sum(pred.1$se.fit, na.rm=T)), "\n", 
+    round(sum(pred.2$fit, na.rm=T)), "+-", round(sum(pred.2$se.fit, na.rm=T)), "\n", 
+    round(sum(pred.3$fit, na.rm=T)), "+-", round(sum(pred.3$se.fit, na.rm=T)))
 
 tibble(date=day_seq, recruits=pred.1, subcanopy=pred.2, canopy=pred.3) %>%
   pivot_longer(2:4, names_to="stage", values_to="dailyGrowth") %>%
@@ -495,7 +499,8 @@ Pedersen 2012 built a similar stage-based model of L. hyperborea in Norway with 
 ```{r extract_survival}
 surv.df <- data.ls$stageFrom_stageTo %>% 
   filter(stageTo=="dead") %>%
-  mutate(survRate=1-rate,
+  mutate(survRate=1-rate_mn,
+         survRate_sd=rate_sd,
          exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
 surv.df
 ```
@@ -556,8 +561,8 @@ erosion_monthly <- data.ls$month_biomass %>%
   filter(type=="loss" & Month %in% month.name[-(3:4)]) %>%
   group_by(Month) %>%
   summarise(mnMonthlyLoss=mean(chgInMonth)) %>%
-  ungroup %>%
-  summarise(mnMonthlyLoss=mean(mnMonthlyLoss))
+  ungroup #%>%
+  #summarise(sdMonthlyLoss=sd(mnMonthlyLoss), mnMonthlyLoss=mean(mnMonthlyLoss))
 # 2. Calculate net growth during growing season
 netTotalGrowth <- data.ls$month_biomass %>% 
   filter(Species=="L. hyp") %>%
@@ -565,11 +570,20 @@ netTotalGrowth <- data.ls$month_biomass %>%
   group_by(Month) %>%
   summarise(mnMonthlyGrowth=mean(chgInMonth)) %>%
   ungroup %>%
-  mutate(netMonthlyGrowth=mnMonthlyGrowth-erosion_monthly$mnMonthlyLoss) %>%
+  mutate(netMonthlyGrowth=mnMonthlyGrowth-mean(erosion_monthly$mnMonthlyLoss)) %>%
   summarise(netTotalGrowth=sum(netMonthlyGrowth))
 
 # 3. Calculate % loss during non-growing season
-(erosion_monthly$mnMonthlyLoss*6)/netTotalGrowth$netTotalGrowth
+mean(erosion_monthly$mnMonthlyLoss/(netTotalGrowth$netTotalGrowth/6))
+
+# 3a. Calculate a distribution by bootstrapping
+library(fitdistrplus)
+loss.boot <- map_dbl(1:10000, 
+                     ~mean(sample(erosion_monthly$mnMonthlyLoss, 12, T))/
+                       (netTotalGrowth$netTotalGrowth/6))
+loss.shpPar <- fitdist(loss.boot, "beta")$estimate
+loss.mn_prec <- c(loss.shpPar[1]/sum(loss.shpPar), sum(loss.shpPar))
+
 
 ```
 
