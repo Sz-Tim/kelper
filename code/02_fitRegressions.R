@@ -91,13 +91,13 @@ reg.dfs$lenSt_to_wtSt.lm <- data.ls$lengthStipe_weightStipe %>%
   mutate(logWtStipe=log(weightStipe), 
          logLenStipe=log(lengthStipe),
          lPAR_atDepth=log(PAR_atDepth)) %>%
-  select(any_of(str_split(reg.full$lenSt_to_wtSt.lm, " ")[[1]]), location, reference)
+  select(any_of(str_split(reg.full$lenSt_to_wtSt.lm, " ")[[1]]), location, reference, id)
 
 reg.dfs$lenSt_to_wtFr.lm <- data.ls$lengthStipe_weightFrond %>%
   mutate(logLenStipe=log(lengthStipe), 
          logWtFrond=log(weightFrond),
          lPAR_atDepth=log(PAR_atDepth)) %>%
-  select(any_of(str_split(reg.full$lenSt_to_wtFr.lm, " ")[[1]]), location, reference)
+  select(any_of(str_split(reg.full$lenSt_to_wtFr.lm, " ")[[1]]), location, reference, id)
 
 reg.dfs$wtFr_to_arFr.lm <- data.ls$weightFrond_areaFrond %>%
   slice_sample(prop=1) %>% # randomize row order
@@ -106,19 +106,19 @@ reg.dfs$wtFr_to_arFr.lm <- data.ls$weightFrond_areaFrond %>%
   mutate(logWtFrond=log(weightFrond),
          logAreaFrond=log(areaFrond/1e4),
          lPAR_atDepth=log(PAR_atDepth)) %>%
-  select(any_of(str_split(reg.full$wtFr_to_arFr.lm, " ")[[1]]), location, reference)
+  select(any_of(str_split(reg.full$wtFr_to_arFr.lm, " ")[[1]]), location, reference, id)
 
 reg.dfs$arFr_to_wtFr.lm <- reg.dfs$wtFr_to_arFr.lm %>%
-  select(any_of(str_split(reg.full$arFr_to_wtFr.lm, " ")[[1]]), location, reference)
+  select(any_of(str_split(reg.full$arFr_to_wtFr.lm, " ")[[1]]), location, reference, id)
 
 reg.dfs$canopyHeight.lm <- data.ls$depth_maxStipeLen %>% 
   mutate(location="a",
          lPAR_atDepth=log(PAR_atDepth)) %>%
-  select(any_of(str_split(reg.full$canopyHeight.lm, " ")[[1]]), location, reference)
+  select(any_of(str_split(reg.full$canopyHeight.lm, " ")[[1]]), location, reference, id)
 
 reg.dfs$FAI.lm <- data.ls$depth_FAI %>%
   mutate(lPAR_atDepth=log(PAR_atDepth)) %>%
-  select(any_of(str_split(reg.full$FAI.lm, " ")[[1]]), location, reference)
+  select(any_of(str_split(reg.full$FAI.lm, " ")[[1]]), location, reference, id)
 
 reg.dfs$N_canopy.lm <- data.ls$lengthStipe_NperSqM %>%
   left_join(., data.ls$lengthStipe_NperSqM %>% 
@@ -127,29 +127,30 @@ reg.dfs$N_canopy.lm <- data.ls$lengthStipe_NperSqM %>%
                         top33=(stipeMax-stipeMin)*2/3 + stipeMin), 
             by=c("PAR_atDepth", "location")) %>%
   mutate(stage=c("canopy", "subcanopy")[1 + (lengthStipe < top33)]) %>%
-  group_by(location, reference, habitat, SST, PAR_atDepth, fetch, logSlope, stage) %>%
+  group_by(location, reference, id, habitat, SST, PAR_atDepth, fetch, logSlope, stage) %>%
   summarise(NperSqM=sum(NperSqM)) %>%
   bind_rows(data.ls$depth_NperSqM %>% 
-              select(2:4, location, reference, SST, PAR_atDepth, fetch, logSlope) %>%
+              select(2:4, location, reference, id, SST, PAR_atDepth, fetch, logSlope) %>%
               rename(canopy=NperSqM, subcanopy=N_subcanopy, recruits=N_recruits) %>%
               pivot_longer(1:3, names_to="stage", values_to="NperSqM")) %>%
   mutate(N=round(NperSqM),
          lPAR_atDepth=log(PAR_atDepth)) %>%
   ungroup %>%
   filter(stage=="canopy") %>%
-  select(any_of(str_split(reg.full$N_canopy.lm, " ")[[1]]), location, N, reference)
+  select(any_of(str_split(reg.full$N_canopy.lm, " ")[[1]]), location, N, reference, id)
 
 reg.dfs <- map(reg.dfs, ~filter(.x, complete.cases(.x)))
 reg.dfs_mn_sd <- map(reg.dfs, 
-                     ~.x %>% summarise(across(where(is.numeric), 
-                                              list(ctr=mean, scl=sd))) %>%
+                     ~.x %>% select(-id) %>% 
+                       summarise(across(where(is.numeric), 
+                                        list(ctr=mean, scl=sd))) %>%
                        pivot_longer(everything(), names_to="Par", values_to="val") %>%
                        mutate(Metric=str_sub(Par, -3, -1),
                               Par=str_sub(Par, 1, -5)) %>%
                        pivot_wider(names_from="Metric", values_from="val"))
 dfs.scaled <- map(reg.dfs,
-                  ~.x %>% mutate(across(where(is.numeric), 
-                                        ~(.x - mean(.x))/sd(.x))))
+                  ~.x %>% select(-id) %>%
+                    mutate(across(where(is.numeric),  ~(.x - mean(.x))/sd(.x))))
 dfs.scaled$N_canopy.lm$N <- reg.dfs$N_canopy.lm$N
 
 
