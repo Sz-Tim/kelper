@@ -864,7 +864,7 @@ emulate_sensitivity <- function(sens.out, params, resp, brt.dir, siminfo,
     for(j in 1:length(td)) {
       td_j <- td[j]
       brt.fit <- dismo::gbm.step(sub.samp, gbm.x=params, gbm.y=resp, 
-                                 max.trees=200000, n.folds=5, learning.rate=0.001,
+                                 max.trees=200000, n.folds=5, 
                                  family="gaussian", tree.complexity=td_j,
                                  bag.fraction=0.8, silent=T, plot.main=F)
       saveRDS(brt.fit, glue::glue("{brt.dir}{sep}{resp}_{siminfo}_td-{td_j}-{n}.rds"))
@@ -974,9 +974,9 @@ runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params,
   }
   for(j in 1:length(resp)) {
     for(k in 1:length(depths)) {
-      emulate_sensitivity(mass.i[[k]] %>% filter(month==1), params, n.sub=2, td=3,
+      emulate_sensitivity(mass.i[[k]] %>% filter(month==1), params,
                           resp[j], brt.dir, glue("{siminfo}_jan_{depths[k]}m"))
-      emulate_sensitivity(mass.i[[k]] %>% filter(month==7), params, n.sub=2, td=3,
+      emulate_sensitivity(mass.i[[k]] %>% filter(month==7), params,
                           resp[j], brt.dir, glue("{siminfo}_july_{depths[k]}m"))
       try(emulation_summary(resp[j], brt.dir, glue("{siminfo}_jan_{depths[k]}m")))
       try(emulation_summary(resp[j], brt.dir, glue("{siminfo}_july_{depths[k]}m")))
