@@ -40,8 +40,8 @@ UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 coast <- read_sf(glue("{gis.dir}coastline\\ne_10m_land.shp")) %>%
   add_row(read_sf(glue("{gis.dir}coastline\\ne_10m_minor_islands.shp"))) %>%
   st_crop(UK_bbox)
-data.dir <- "..\\data\\digitized\\"
-supp.f <- "..\\data\\collab\\collab_all.xlsx"
+data.dir <- "data\\raw\\digitized\\"
+supp.f <- "data\\raw\\collab\\collab_all.xlsx"
 data.ls <- compileDatasets(data.dir, supp.f)
 
 site.i <- read_csv(glue("{data.dir}sitesDigitized.csv"),
