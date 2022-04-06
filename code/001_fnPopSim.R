@@ -29,9 +29,9 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
   }
   #---- setup parameters
   if(pars$stochParams) {
-    par.yr <- list(loss=rbeta(pars$tmax, prod(pars$lossRate), (1-pars$lossRate[1])*pars$lossRate[2]),
-                   settlement=pmax(0, rnorm(pars$tmax, pars$settlementRate[1], pars$settlementRate[2])),
-                   surv=apply(pars$survRate, 1, function(x) pmax(0, pmin(1, rnorm(pars$tmax, x[1], x[2])))),
+    par.yr <- list(loss=rbeta(pars$tmax, prod(pars$lossRate), (1-pars$lossRate[,1])*pars$lossRate[,2]),
+                   settlement=pmax(0, rnorm(pars$tmax, pars$settlementRate[,1], pars$settlementRate[,2])),
+                   surv=apply(pars$survRate, 1, function(x) rbeta(pars$tmax, prod(x), (1-x[1])*x[2])),
                    growStipeMax=apply(pars$growthRateStipeMax, 1, function(x) rnorm(pars$tmax, x[1], x[2])),
                    growFrond=apply(pars$growthRateFrond, 1, function(x) rnorm(pars$tmax, x[1], x[2])))
   } else {
@@ -50,12 +50,10 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
     # should depend on depth...
     par.yr$loss <- qbeta(pnorm(pars.sim$storms, 0, 1), 
                          prod(pars$lossRate), 
-                         (1-pars$lossRate[1])*pars$lossRate[2])
+                         (1-pars$lossRate[,1])*pars$lossRate[,2])
     par.yr$surv_strm <- apply(pars$survRate, 1, 
-                              function(x) pmax(0, 
-                                               pmin(1, 
-                                                    qnorm(pnorm(-pars.sim$storms, 0, 1), 
-                                                          x[1], x[2]))))
+                              function(x) qbeta(pnorm(-pars.sim$storms, 0, 1), 
+                                                prod(x), (1-x[1])*x[2]))
   }
   par.yr$surv <- sqrt(par.yr$surv) # annual rates to 1/2 year rates
   par.yr$surv_strm <- sqrt(par.yr$surv_strm)

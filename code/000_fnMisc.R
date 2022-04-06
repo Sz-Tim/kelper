@@ -280,7 +280,7 @@ loadCovariates_full <- function(gis.dir=NULL, bbox=NULL, loadFile=NULL, saveFile
 #' @examples
 extractCovarsToDatasets <- function(data.ls, covars.ls=NULL, PAR_datasource, grid.sf=NULL) {
   if(is.null(grid.sf)) {
-    fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
+    fetch_thresh <- 4.02 # bad practice, but based on Pedersen sites (low, med+high)
     for(i in seq_along(data.ls)) {
       if(any(!is.na(data.ls[[i]]$lat))) {
         i_sf <- data.ls[[i]] %>% 
@@ -307,9 +307,7 @@ extractCovarsToDatasets <- function(data.ls, covars.ls=NULL, PAR_datasource, gri
                                        fun=mean, small=T),
                  fetch=raster::extract(covars.ls$fetch, ., buffer=8e3, 
                                        fun=mean, small=T),
-                 fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
-                                    between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
-                                    fetch > fetch_thirds[2] ~ 3))
+                 fetchCat=(fetch < fetch_tresh)+1)
         data.ls[[i]] <- left_join(data.ls[[i]], st_drop_geometry(i_sf))
         if(any(!is.na(data.ls[[i]]$depth) & 
                !is.na(data.ls[[i]]$KD_mn) & 
@@ -356,7 +354,7 @@ extractCovarsToDatasets <- function(data.ls, covars.ls=NULL, PAR_datasource, gri
 #'
 #' @examples
 extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
-  fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
+  fetch_thresh <- 4.02 # bad practice, but based on Pedersen sites (low, med+high)
   site.sf <- site.i %>% 
     filter(!is.na(lat) & !is.na(lon)) %>%
     st_as_sf(coords=c("lon", "lat"), crs=4326) %>%
@@ -381,9 +379,7 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
                                  fun=mean, small=T, method="bilinear"),
            fetch=raster::extract(covars.ls$fetch, ., 
                                  fun=mean, small=T, method="bilinear"),
-           fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
-                              between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
-                              fetch > fetch_thirds[2] ~ 3))
+           fetchCat=(fetch < fetch_tresh)+1)
   site.sf$PAR_surface <- site.sf[[ifelse(PAR_datasource=="MODIS", "PAR_mn", "PAR_POWER")]]
   return(site.sf)
 }
@@ -403,7 +399,7 @@ extractCovarsToPts <- function(site.i, covars.ls, PAR_datasource) {
 #'
 #' @examples
 extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
-  fetch_thirds <- c(4.02, 4.33) # bad practice, but based on Pedersen sites
+  fetch_thresh <- 4.02 # bad practice, but based on Pedersen sites (low, med+high)
   grid.domain <- grid.domain %>% 
     mutate(sstDay_mn=raster::extract(covars.ls$sstDayGrow_mn, grid.domain, fun=mean, na.rm=T),
            sstDay_sd=raster::extract(covars.ls$sstDayGrow_sd, grid.domain, fun=mean, na.rm=T),
@@ -420,9 +416,7 @@ extractCovarsToGrid <- function(grid.domain, covars.ls, PAR_datasource) {
             left=T) %>%
     group_by(id) %>% summarise(across(everything(), mean, na.rm=T)) %>% ungroup %>%
     group_by(id) %>% summarise(across(everything(), mean, na.rm=T)) %>% ungroup %>%
-    mutate(fetchCat=case_when(fetch < fetch_thirds[1] ~ 1,
-                              between(fetch, fetch_thirds[1], fetch_thirds[2]) ~ 2,
-                              fetch > fetch_thirds[2] ~ 3))
+    mutate(fetchCat=(fetch < fetch_tresh)+1)
   
   grid.domain$PAR_surface <- grid.domain[[ifelse(PAR_datasource=="MODIS", "PAR_mn", "PAR_POWER")]]
   return(grid.domain)
@@ -622,15 +616,22 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, grid.id=NA, gridRes,
     cell.env <- grid.i[x,]
   }
   
+  params <- dir(par.dir, "par_") %>%
+    map(~suppressMessages(read_csv(glue(par.dir, .x))) %>%
+          mutate(exposure=case_when(exposure=="low"~1, exposure=="high"~2))) %>%
+    setNames(str_sub(dir(par.dir, "par_"), 5, -5))
+  
   pop.ls <- mass.ls <- vector("list", length(pars.sim$depths))
   for(j in 1:length(pars.sim$depths)) {
     par_i <- setParameters(
       tmax=pars.sim$tmax, 
-      survRate=cbind(filter(surv.df, exposure==cell.env$fetchCat[1])$survRate,
-                     filter(surv.df, exposure==cell.env$fetchCat[1])$rate_sd),
-      settlementRate=c(filter(fecund.df, exposure==cell.env$fetchCat[1])$rate_mn,
-                       filter(fecund.df, exposure==cell.env$fetchCat[1])$rate_sd),
-      lossRate=c(0.2340987, 90.1752),
+      survRate=params$survival %>% 
+        filter(exposure==cell.env$fetchCat[1]) %>%
+        select(mn, prec) %>% cbind,
+      settlementRate=params$recruitment %>% 
+        filter(exposure==cell.env$fetchCat[1]) %>%
+        select(mn, sd) %>% cbind,
+      lossRate=params$erosion %>% select(mn, prec) %>% cbind,
       stochParams=pars.sim$stochParams,
       stormIntensity=pars.sim$storms,
       extraPars=list(
@@ -725,12 +726,12 @@ simSensitivityDepthsWithinCell <- function(x, grid.i, gridRes, pars.sens,
   
   # setup landscape and parameters
   cell.env <- grid.i[x,]
-  grStipe.draws <- parSets[[4]] %>% filter(param=="growStipe") %>% group_split(parDraw)
-  grFrond.draws <- parSets[[4]] %>% filter(param=="growFrond") %>% group_split(parDraw)
-  loss.draws <- parSets[[4]] %>% filter(param=="loss")
+  grStipe.draws <- parSets[[3]] %>% filter(param=="growStipe") %>% group_split(parDraw)
+  grFrond.draws <- parSets[[3]] %>% filter(param=="growFrond") %>% group_split(parDraw)
+  loss.draws <- parSets[[3]] %>% filter(param=="loss")
   surv.draws <- parSets[[cell.env$fetchCat]] %>% filter(param=="surv") %>% group_split(parDraw)
   settle.draws <- parSets[[cell.env$fetchCat]] %>% filter(param=="settlement")
-  densShape.draws <- parSets[[4]] %>% filter(param=="densityEffShape")
+  densShape.draws <- parSets[[3]] %>% filter(param=="densityEffShape")
   
   pop.depth <- mass.depth <- vector("list", length(pars.sens$depths))
   for(j in 1:length(pars.sens$depths)) {
@@ -942,7 +943,9 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
 
 
 
-#' Title
+#' Run Boosted Regression Trees
+#' 
+#' Wrapper for emulate_sensitivity() > emulation_summary()
 #'
 #' @param x Index for parLapply
 #' @param pop.f Vector of files with population output
@@ -964,7 +967,7 @@ runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params,
   sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
   siminfo <- str_remove(str_split_fixed(pop.f[x], "pop_", 2)[,2], ".rds")
   mass.i <- readRDS(mass.f[x]) %>%
-    left_join(., parSets[[4]]) %>%
+    left_join(., parSets[[3]]) %>%
     left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]]) %>%
     group_by(depth) %>%
     group_split()
@@ -1016,3 +1019,4 @@ multijetlag <- function(data, ..., n=10){
   mutate( data, !!!quosures )
   
 }
+

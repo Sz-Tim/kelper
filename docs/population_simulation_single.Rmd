@@ -38,7 +38,7 @@ theme_set(theme_bw()); options(mc.cores=4)
 gis.dir <- "..\\..\\00_gis\\"
 UK_bbox <- st_bbox(c(xmin=-11, xmax=2, ymin=49, ymax=61), crs=st_crs(4326))
 data.dir <- "..\\data\\digitized\\"
-supp.f <- "..\\data\\collab\\collab_all.xlsx"
+supp.f <- "data\\raw\\collab\\collab_all.xlsx"
 data.ls <- compileDatasets(data.dir, supp.f)
 
 site.i <- read_csv(paste0(data.dir, "sitesDigitized.csv"),
@@ -497,12 +497,43 @@ depth_density_stages %>%
 
 Pedersen 2012 built a similar stage-based model of L. hyperborea in Norway with three different levels of exposure, and provide all of the parameters as individuals/m^2 at an annual timestep. The sites are quite a bit further north, so I'm not sure how well this translates to Scotland, much less the whole UK.
 ```{r extract_survival}
-surv.df <- data.ls$stageFrom_stageTo %>% 
-  filter(stageTo=="dead") %>%
-  mutate(survRate=1-rate_mn,
-         survRate_sd=rate_sd,
-         exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
-surv.df
+library(fitdistrplus); library(truncnorm)
+surv.df <- expand_grid(stage=factor(c("recruits", "subcanopy", "canopy"),
+                                    levels=c("recruits", "subcanopy", "canopy")),
+                       exposure_og=c("low", "med", "high")) %>%
+  mutate(exposure=case_when(exposure_og=="low" ~ "low",
+                            exposure_og!="low" ~ "high")) %>%
+  mutate(N_mn=c(438, 476, 1854, 23.2, 28.6, 66.4, 8.9, 7.3, 12.3),
+         N_sd=c(315, 55, 1282, 9, 6, 19, 2.7, 2.1, 0.2),
+         dead_mn=c(423, 457, 1804, 10.9, 15.4, 44.9, 4.6, 4.0, 5.0),
+         dead_sd=c(308, 52, 1263, 8.1, 4.6, 18.9, 0.7, 1.1, 0.1)) %>%
+  rowwise() %>%
+  # mutate(s_sim=list(1-rnorm(1e4, dead_mn, dead_sd)/rnorm(1e4, N_mn, N_sd))) %>%
+  mutate(N_sim=list(rtruncnorm(1e5, 0, Inf, N_mn, N_sd))) %>%
+  unnest(N_sim) %>%
+  mutate(dead_sim=rtruncnorm(n(), 0, Inf, dead_mn, dead_sd)) %>%
+  mutate(s_sim=1-dead_sim/N_sim)
+surv.df$s_sim[surv.df$s_sim >= 1] <- NA
+surv.df$s_sim[surv.df$s_sim > 0.5 & surv.df$stage=="recruits"] <- NA
+surv.df$s_sim[surv.df$s_sim <= 0 & surv.df$stage=="recruits"] <- 1e-50
+surv.df$s_sim[surv.df$s_sim <= 0] <- NA
+surv.df <- surv.df %>% filter(!is.na(s_sim)) %>%
+  group_by(stage, exposure) %>%
+  summarise(shp1=fitdist(s_sim, "beta")$estimate[1],
+            shp2=fitdist(s_sim, "beta")$estimate[2]) %>%
+  mutate(mn=shp1/(shp1+shp2),
+         prec=shp1+shp2) %>%
+  arrange(stage, desc(exposure))
+par(mfrow=c(3,2))
+for(i in 1:nrow(surv.df)) {
+  curve(dbeta(x, surv.df$shp1[i], surv.df$shp2[i]), from=0, to=1, 
+        main=paste(surv.df$stage[i], surv.df$exposure[i]), ylab="density", xlab="s")
+}
+
+
+write_csv(surv.df, glue("data{sep}par_survival.csv"))
+
+
 ```
 
 
@@ -578,11 +609,15 @@ mean(erosion_monthly$mnMonthlyLoss/(netTotalGrowth$netTotalGrowth/6))
 
 # 3a. Calculate a distribution by bootstrapping
 library(fitdistrplus)
-loss.boot <- map_dbl(1:10000, 
-                     ~mean(sample(erosion_monthly$mnMonthlyLoss, 12, T))/
+loss.boot <- map_dbl(1:1e5, 
+                     ~sample(erosion_monthly$mnMonthlyLoss, 1, T)/
                        (netTotalGrowth$netTotalGrowth/6))
 loss.shpPar <- fitdist(loss.boot, "beta")$estimate
 loss.mn_prec <- c(loss.shpPar[1]/sum(loss.shpPar), sum(loss.shpPar))
+loss.df <- tibble(stage=NA, exposure=NA, 
+                  shp1=loss.shpPar[1], shp2=loss.shpPar[2],
+                  mn=loss.mn_prec[1], prec=loss.mn_prec[2])
+write_csv(loss.df, glue("data{sep}par_erosion.csv"))
 
 
 ```
@@ -597,6 +632,25 @@ fecund.df <- data.ls$stageFrom_stageTo %>%
   filter(stageFrom=="canopy" & stageTo=="recruits") %>%
   mutate(exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
 fecund.df
+
+
+
+library(fitdistrplus); library(truncnorm)
+fecund.df <-tibble(stage=NA, exposure_og=c("low", "med", "high")) %>%
+  mutate(exposure=case_when(exposure_og=="low" ~ "low",
+                            exposure_og!="low" ~ "high")) %>%
+  mutate(N_mn=c(438, 476, 1854),
+         N_sd=c(315, 55, 1282)) %>%
+  rowwise() %>%
+  mutate(z_sim=list(rtruncnorm(1e4, 0, Inf, N_mn, N_sd))) %>%
+  unnest(z_sim) %>%
+  group_by(stage, exposure) %>%
+  summarise(z_mn=mean(z_sim),
+            z_sd=sd(z_sim)) %>%
+  arrange(desc(exposure))
+write_csv(fecund.df, glue("data{sep}par_recruitment.csv"))
+
+
 ```
 
 

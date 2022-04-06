@@ -1505,6 +1505,16 @@ stormLag_md.df <- mass_simGrid.df %>%
 
 
 
+fetch_thresh <- 4.02 # bad practice, but based on Pedersen sites
+grid.i %>%
+  mutate(fetchCat=factor(fetchCat, labels=c("Low", "High"))) %>%
+  ggplot(aes(fetch, fill=fetchCat)) + 
+  geom_vline(xintercept=fetch_thresh, linetype=2, colour="grey30") +
+  geom_histogram(bins=90) +
+  scale_fill_viridis_d("Exposure\ncategory", option="B", end=0.75) +
+  theme_classic() +
+  labs(x=expression(log[10](fetch)))
+ggsave(glue("figs{sep}pub{sep}fetchDistribution.png"), height=4, width=6, dpi=300)
 
 
 ggplot(data.ls$year_stormIndex, aes(year, stormIndex)) + 
@@ -1727,71 +1737,53 @@ if(gridFigs) {
 # parameter distributions -------------------------------------------------
 
 # storm effects on survival rates
-par.rng <- readRDS(glue("{sens.dir}parameter_ranges.rds"))
+par.rng <- readRDS(glue("{sens.dir}000_parameter_ranges.rds"))
 surv.rng <- par.rng %>% filter(param=="surv") %>%
   group_by(exposure) %>% group_split()
-loss_mnPrec <- c(0.2340987, 90.1752) # mn, prec for beta distribution
+loss.rng <- par.rng %>% filter(param=="loss")
 
 
 storm_effect.df <- data.ls$year_stormIndex %>%
   select(year, stormIndex) %>%
-  mutate(surv_canopy_1=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[1]], stage=="canopy")$valMean,
-                             filter(surv.rng[[1]], stage=="canopy")$valSD),
-         surv_canopy_2=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[2]], stage=="canopy")$valMean,
-                             filter(surv.rng[[2]], stage=="canopy")$valSD),
-         surv_canopy_3=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[3]], stage=="canopy")$valMean,
-                             filter(surv.rng[[3]], stage=="canopy")$valSD),
-         surv_subcanopy_1=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[1]], stage=="subcanopy")$valMean,
-                             filter(surv.rng[[1]], stage=="subcanopy")$valSD),
-         surv_subcanopy_2=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[2]], stage=="subcanopy")$valMean,
-                             filter(surv.rng[[2]], stage=="subcanopy")$valSD),
-         surv_subcanopy_3=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[3]], stage=="subcanopy")$valMean,
-                             filter(surv.rng[[3]], stage=="subcanopy")$valSD),
-         surv_recruit_1=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[1]], stage=="recruits")$valMean,
-                             filter(surv.rng[[1]], stage=="recruits")$valSD),
-         surv_recruit_2=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[2]], stage=="recruits")$valMean,
-                             filter(surv.rng[[2]], stage=="recruits")$valSD),
-         surv_recruit_3=qnorm(pnorm(-stormIndex, 0, 1), 
-                             filter(surv.rng[[3]], stage=="recruits")$valMean,
-                             filter(surv.rng[[3]], stage=="recruits")$valSD)) %>%
-  pivot_longer(3:11, names_to="param", values_to="value") %>%
+  mutate(surv_canopy_1=qbeta(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[1]], stage=="canopy")$shp1,
+                             filter(surv.rng[[1]], stage=="canopy")$shp2),
+         surv_canopy_2=qbeta(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[2]], stage=="canopy")$shp1,
+                             filter(surv.rng[[2]], stage=="canopy")$shp2),
+         surv_subcanopy_1=qbeta(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[1]], stage=="subcanopy")$shp1,
+                             filter(surv.rng[[1]], stage=="subcanopy")$shp2),
+         surv_subcanopy_2=qbeta(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[2]], stage=="subcanopy")$shp1,
+                             filter(surv.rng[[2]], stage=="subcanopy")$shp2),
+         surv_recruit_1=qbeta(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[1]], stage=="recruits")$shp1,
+                             filter(surv.rng[[1]], stage=="recruits")$shp2),
+         surv_recruit_2=qbeta(pnorm(-stormIndex, 0, 1), 
+                             filter(surv.rng[[2]], stage=="recruits")$shp1,
+                             filter(surv.rng[[2]], stage=="recruits")$shp2)) %>%
+  pivot_longer(starts_with("surv_"), names_to="param", values_to="value") %>%
   mutate(stage=str_split_fixed(param, "_", 3)[,2] %>%
            factor(levels=c("recruit", "subcanopy", "canopy")),
          exposure=str_split_fixed(param, "_", 3)[,3] %>% 
-           factor(labels=c("Low", "Med", "High"))) %>%
+           factor(labels=c("Low", "High"))) %>%
   mutate(param=paste0("italic(s[", stage, "])"),
-         value=sqrt(pmin(1, pmax(0, value)))) %>%
+         value=sqrt(value)) %>%
   bind_rows(data.ls$year_stormIndex %>%
               select(year, stormIndex) %>%
               mutate(param="italic(epsilon)",
                      exposure="Low",
                      value=qbeta(pnorm(stormIndex, 0, 1),
-                                   prod(loss_mnPrec),
-                                   (1-loss_mnPrec[1])*loss_mnPrec[2]))) %>%
-  bind_rows(data.ls$year_stormIndex %>%
-              select(year, stormIndex) %>%
-              mutate(param="italic(epsilon)",
-                     exposure="Med",
-                     value=qbeta(pnorm(stormIndex, 0, 1),
-                                 prod(loss_mnPrec),
-                                 (1-loss_mnPrec[1])*loss_mnPrec[2]))) %>%
+                                   loss.rng$shp1, loss.rng$shp2))) %>%
   bind_rows(data.ls$year_stormIndex %>%
               select(year, stormIndex) %>%
               mutate(param="italic(epsilon)",
                      exposure="High",
                      value=qbeta(pnorm(stormIndex, 0, 1),
-                                 prod(loss_mnPrec),
-                                 (1-loss_mnPrec[1])*loss_mnPrec[2]))) %>%
+                                 loss.rng$shp1, loss.rng$shp2))) %>%
   mutate(param=factor(param, levels=rev(unique(param))),
-         exposure=factor(exposure, levels=c("Low", "Med", "High")))
+         exposure=factor(exposure, levels=c("Low", "High")))
 
 ggplot(storm_effect.df, aes(year, value, colour=param)) + 
   geom_line() + 
@@ -1799,63 +1791,65 @@ ggplot(storm_effect.df, aes(year, value, colour=param)) +
   scale_x_continuous(breaks=c(1950, 1975, 2000)) +
   scale_y_continuous("Rate (non-growing season)", breaks=c(0, 0.5, 1)) +
   scale_colour_manual("Parameter", 
-                      values=c("#bf812d", "#80cdc1", "#35978f", "#01665e"), 
+                      values=c("#bf812d", "#80cdc1", "#35978f", "#003c30"), 
                       labels=scales::parse_format()) +
   theme(axis.title.x=element_blank(),
         legend.text.align=0) +
   facet_grid(.~exposure) 
-ggsave(glue("figs{sep}pub{sep}stormEffect_parameters.png"), width=8, height=2.5, dpi=300)
+ggsave(glue("figs{sep}pub{sep}stormEffect_parameters.png"), width=7, height=2.5, dpi=300)
 
 
 
-fetch_cols <- c("grey80", "grey50", "black")
-stage_cols <- c(recruits="#80cdc1", subcanopy="#35978f", canopy="#01665e")
+fetch_cols <- c("grey50", "black")
+stage_cols <- c(recruits="#80cdc1", subcanopy="#35978f", canopy="#003c30")
+par.rng <- par.rng %>% mutate(exposureNum=case_when(exposure=="low" ~ 1, exposure=="high" ~ 2))
 
 # s_recruits
 s_r <- list(xlim=c(0,1), main="Recruit survival rate",
             xlab=expression(italic(s[recruits])), ylab="density")
-s_r$x.full <- seq(s_r$xlim[1], s_r$xlim[2], length.out=1e3)
-s_r$c.full <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="recruits" & exposure==.x),
-                             dnorm(s_r$x.full, valMean, valSD)))
-s_r$x.95 <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="recruits" & exposure==.x),
+s_r$x.full <- seq(s_r$xlim[1], 0.9, length.out=1e3)
+s_r$c.full <- map(1:2, 
+                  ~with(filter(par.rng, param=="surv" & stage=="recruits" & exposureNum==.x),
+                        dbeta(s_r$x.full, shp1, shp2)))
+s_r$x.95 <- map(1:2, ~with(filter(par.rng, param=="surv" & stage=="recruits" & exposureNum==.x),
                            c(valMin, valMax)))
-s_r$c.95 <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="recruits" & exposure==.x),
-                           dnorm(s_r$x.95[[.x]], valMean, valSD)))
-s_r$ylim <- c(0, max(unlist(s_r$c.full)))
+s_r$c.95 <- map(1:2, ~with(filter(par.rng, param=="surv" & stage=="recruits" & exposureNum==.x),
+                           dbeta(s_r$x.95[[.x]], shp1, shp2)))
+s_r$ylim <- c(0, max(unlist(s_r$c.full)[is.finite(unlist(s_r$c.full))]))
 
 # s_subcanopy
 s_s <- list(xlim=c(0,1),main="Subcanopy survival rate",
             xlab=expression(italic(s[subcanopy])), ylab="density")
 s_s$x.full <- seq(s_s$xlim[1], s_s$xlim[2], length.out=1e3)
-s_s$c.full <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="subcanopy" & exposure==.x),
-                             dnorm(s_s$x.full, valMean, valSD)))
-s_s$x.95 <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="subcanopy" & exposure==.x),
+s_s$c.full <- map(1:2, ~with(filter(par.rng, param=="surv" & stage=="subcanopy" & exposureNum==.x),
+                             dbeta(s_s$x.full, shp1, shp2)))
+s_s$x.95 <- map(1:2, ~with(filter(par.rng, param=="surv" & stage=="subcanopy" & exposureNum==.x),
                            c(valMin, valMax)))
-s_s$c.95 <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="subcanopy" & exposure==.x),
-                           dnorm(s_s$x.95[[.x]], valMean, valSD)))
-s_s$ylim <- c(0, max(unlist(s_s$c.full)))
+s_s$c.95 <- map(1:2, ~with(filter(par.rng, param=="surv" & stage=="subcanopy" & exposureNum==.x),
+                           dbeta(s_s$x.95[[.x]], shp1, shp2)))
+s_s$ylim <- c(0, max(unlist(s_s$c.full)[is.finite(unlist(s_s$c.full))]))
 
 # s_canopy
 s_c <- list(xlim=c(0,1), main="Canopy survival rate",
             xlab=expression(italic(s[canopy])), ylab="density")
 s_c$x.full <- seq(s_c$xlim[1], s_c$xlim[2], length.out=5e2)
-s_c$c.full <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="canopy" & exposure==.x),
-                             dnorm(s_c$x.full, valMean, valSD)))
-s_c$x.95 <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="canopy" & exposure==.x),
+s_c$c.full <- map(1:2, ~with(filter(par.rng, param=="surv" & stage=="canopy" & exposureNum==.x),
+                             dbeta(s_c$x.full, shp1, shp2)))
+s_c$x.95 <- map(1:2, ~with(filter(par.rng, param=="surv" & stage=="canopy" & exposureNum==.x),
                            c(valMin, valMax)))
-s_c$c.95 <- map(1:3, ~with(filter(par.rng, param=="surv" & stage=="canopy" & exposure==.x),
-                           dnorm(s_c$x.95[[.x]], valMean, valSD)))
-s_c$ylim <- c(0, max(unlist(s_c$c.full)))
+s_c$c.95 <- map(1:2, ~with(filter(par.rng, param=="surv" & stage=="canopy" & exposureNum==.x),
+                           dbeta(s_c$x.95[[.x]], shp1, shp2)))
+s_c$ylim <- c(0, max(unlist(s_c$c.full)[is.finite(unlist(s_c$c.full))]))
 
 # z
 z <- list(xlim=c(0,5e3), main="Settlement rate",
           xlab=expression(italic(z)~(N/m^2)), ylab="density")
 z$x.full <- seq(z$xlim[1], z$xlim[2], length.out=5e2)
-z$c.full <- map(1:3, ~with(filter(par.rng, param=="settlement" & exposure==.x),
+z$c.full <- map(1:2, ~with(filter(par.rng, param=="settlement" & exposureNum==.x),
                              dnorm(z$x.full, valMean, valSD)))
-z$x.95 <- map(1:3, ~with(filter(par.rng, param=="settlement" & exposure==.x),
+z$x.95 <- map(1:2, ~with(filter(par.rng, param=="settlement" & exposureNum==.x),
                            c(valMin, valMax)))
-z$c.95 <- map(1:3, ~with(filter(par.rng, param=="settlement" & exposure==.x),
+z$c.95 <- map(1:2, ~with(filter(par.rng, param=="settlement" & exposureNum==.x),
                            dnorm(z$x.95[[.x]], valMean, valSD)))
 z$ylim <- c(0, max(unlist(z$c.full)))
 
@@ -1887,10 +1881,11 @@ omega$ylim <- c(0, max(unlist(omega$c.full)))
 epsilon <- list(xlim=c(0,1), main="Frond erosion rate",
                 xlab=expression(italic(epsilon)~(prop.~frond/non-growing~season)), ylab="density")
 epsilon$x.full <- seq(epsilon$xlim[1], epsilon$xlim[2], length.out=5e2)
-epsilon$c.full <- dbeta(epsilon$x.full, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2])
+epsilon$c.full <- with(filter(par.rng, param=="loss"), 
+                       dbeta(epsilon$x.full, shp1, shp2))
 epsilon$x.95 <- with(filter(par.rng, param=="loss"), c(valMin, valMax))
 epsilon$c.95 <- with(filter(par.rng, param=="loss"),
-                             dbeta(epsilon$x.95, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2]))
+                             dbeta(epsilon$x.95, shp1, shp2))
 epsilon$ylim <- c(0, max(unlist(epsilon$c.full)))
 
 # density effect shape
@@ -1911,35 +1906,35 @@ png(glue("figs{sep}pub{sep}parameter_distributions.png"), width=9, height=4.5, r
 
   # s_recruits
   plot(NA, NA, xlim=s_r$xlim, ylim=s_r$ylim, main=s_r$main, xlab=s_r$xlab, ylab=s_r$ylab)
-  for(i in 1:3) {
+  for(i in 1:2) {
     segments(x0=s_r$x.95[[i]], y0=0, y1=s_r$c.95[[i]], col=fetch_cols[i])
     lines(s_r$x.full, s_r$c.full[[i]], col=fetch_cols[i])    
   }
-  legend("topright", col=fetch_cols, lty=1, c("Low", "Med", "High"), bty="n", title="Wave fetch")
+  legend("topright", col=fetch_cols, lty=1, c("Low",  "High"), bty="n", title="Wave fetch")
   
   # s_subcanopy
   plot(NA, NA, xlim=s_s$xlim, ylim=s_s$ylim, main=s_s$main, xlab=s_s$xlab, ylab=s_s$ylab)
-  for(i in 1:3) {
+  for(i in 1:2) {
     segments(x0=s_s$x.95[[i]], y0=0, y1=s_s$c.95[[i]], col=fetch_cols[i])
     lines(s_s$x.full, s_s$c.full[[i]], col=fetch_cols[i])    
   }
-  legend("topright", col=fetch_cols, lty=1, c("Low", "Med", "High"), bty="n", title="Wave fetch")
+  legend("topright", col=fetch_cols, lty=1, c("Low", "High"), bty="n", title="Wave fetch")
   
   # s_canopy
   plot(NA, NA, xlim=s_c$xlim, ylim=s_c$ylim, main=s_c$main, xlab=s_c$xlab, ylab=s_c$ylab)
-  for(i in 1:3) {
+  for(i in 1:2) {
     segments(x0=s_c$x.95[[i]], y0=0, y1=s_c$c.95[[i]], col=fetch_cols[i])
     lines(s_c$x.full, s_c$c.full[[i]], col=fetch_cols[i])    
   }
-  legend("topright", col=fetch_cols, lty=1, c("Low", "Med", "High"), bty="n", title="Wave fetch")
+  legend("topright", col=fetch_cols, lty=1, c("Low", "High"), bty="n", title="Wave fetch")
   
   # z
   plot(NA, NA, xlim=z$xlim, ylim=z$ylim, main=z$main, xlab=z$xlab, ylab=z$ylab)
-  for(i in 1:3) {
+  for(i in 1:2) {
     segments(x0=z$x.95[[i]], y0=0, y1=z$c.95[[i]], col=fetch_cols[i])
     lines(z$x.full, z$c.full[[i]], col=fetch_cols[i])    
   }
-  legend("topright", col=fetch_cols, lty=1, c("Low", "Med", "High"), bty="n", title="Wave fetch")
+  legend("topright", col=fetch_cols, lty=1, c("Low", "High"), bty="n", title="Wave fetch")
   
   # gamma
   plot(NA, NA, xlim=gamma$xlim, ylim=gamma$ylim, main=gamma$main, xlab=gamma$xlab, ylab=gamma$ylab)

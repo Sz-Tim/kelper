@@ -23,7 +23,7 @@ sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 data.dir <- glue("data{sep}raw{sep}digitized{sep}")
 supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
 sens.dir <- glue("out{sep}sensitivity{sep}")
-parSets.f <- glue("000_paramSets_exposure_")
+parSets.f <- "000_paramSets_exposure_"
 
 # switches & settings
 rerun <- T
@@ -32,7 +32,7 @@ gridRes <- c(0.1, 0.25)[1]
 nCores <- 50
 options(mc.cores=nCores)
 pars.sens <- list(nParDraws=1e3,
-                  depths=c(2, 15),
+                  depths=c(2, 5, 10, 15),
                   tmax=30,
                   tskip=10,
                   nSim=1,
@@ -40,20 +40,19 @@ pars.sens <- list(nParDraws=1e3,
                   landscape="static")
 
 # load files
-grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg"))
+grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>% 
+  mutate(fetchCat=pmin(fetchCat, 2))
 grid.i <- grid.sf %>% st_drop_geometry() %>%
   rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn) %>%
   select(id, SST, KD, PAR, fetch, fetchCat)
 data.ls <- compileDatasets(data.dir, supp.f)
 lm.fit <- readRDS(glue("data{sep}fits_{gridRes}.rds"))
 lm.mnsd <- readRDS(glue("data{sep}dfs_mn_sd_{gridRes}.rds"))
-surv.df <- data.ls$stageFrom_stageTo %>% 
-  filter(stageTo=="dead") %>%
-  mutate(survRate=1-rate_mn,
-         exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
-fecund.df <- data.ls$stageFrom_stageTo %>% 
-  filter(stageFrom=="canopy" & stageTo=="recruits") %>%
-  mutate(exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
+surv.df <- read_csv(glue("data{sep}par_survival.csv"))
+recruitment.df <- read_csv(glue("data{sep}par_recruitment.csv"))
+erosion.df <- read_csv(glue("data{sep}par_erosion.csv"))
+stipeGrow.df <- read_csv(glue("data{sep}par_growStipe.csv"))
+frondGrow.df <- read_csv(glue("data{sep}par_growFrond.csv"))
 
 
 
@@ -65,47 +64,51 @@ fecund.df <- data.ls$stageFrom_stageTo %>%
 # assign parameter values -------------------------------------------------
 
 
-# parameter ranges: approximately mean +- 2 sd
-loss_mnPrec <- c(0.2340987, 90.1752) # mn, prec for beta distribution
-rate_stipe <- cbind(c(194, 195, 58), c(23, 21, 10)) # mn, sd by stage
-rate_frond <- cbind(c(1787, 2299, 3979), c(179, 397, 417))/1e4
+# parameter ranges: 90% CIs
+p <- c(0.05, 0.95)
 par.rng <- list(surv=surv.df %>%
-                  mutate(stage=stageFrom,
-                         valMean=1-rate_mn,
-                         valSD=rate_sd,
-                         valMin=1-pmin(1, pmax(0, qnorm(0.975, rate_mn, rate_sd))),
-                         valMax=1-pmin(1, pmax(0, qnorm(0.025, rate_mn, rate_sd)))) %>%
-                  select(stage, valMean, valSD, valMin, valMax, exposure),
-                settlement=fecund.df %>%
-                  mutate(valMean=rate_mn,
-                         valSD=rate_sd,
-                         valMin=pmax(0, qnorm(0.025, rate_mn, rate_sd)),
-                         valMax=pmax(0, qnorm(0.975, rate_mn, rate_sd))) %>%
-                  select(valMean, valSD, valMin, valMax, exposure),
-                growStipe=tibble(stage=c("recruits", "subcanopy", "canopy"),
-                                 valMean=rate_stipe[,1],
-                                 valSD=rate_stipe[,2],
-                                 valMin=apply(rate_stipe, 1, function(x) qnorm(0.025, x[1], x[2])),
-                                 valMax=apply(rate_stipe, 1, function(x) qnorm(0.975, x[1], x[2]))),
-                growFrond=tibble(stage=c("recruits", "subcanopy", "canopy"),
-                                 valMean=rate_frond[,1],
-                                 valSD=rate_frond[,2],
-                                 valMin=apply(rate_frond, 1, function(x) qnorm(0.025, x[1], x[2])),
-                                 valMax=apply(rate_frond, 1, function(x) qnorm(0.975, x[1], x[2]))),
-                loss=tibble(valMean=loss_mnPrec[1],
-                            valMin=qbeta(0.025, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2]),
-                            valMax=qbeta(0.975, prod(loss_mnPrec), (1-loss_mnPrec[1])*loss_mnPrec[2])),
+                  mutate(valMean=mn,
+                         valPrec=prec,
+                         valMin=qbeta(p[1], shp1, shp2),
+                         valMax=qbeta(p[2], shp1, shp2)) %>%
+                  select(stage, exposure, valMean, valPrec, valMin, valMax, shp1, shp2),
+                settlement=recruitment.df %>%
+                  mutate(valMean=mn,
+                         valSD=sd,
+                         valMin=truncnorm::qtruncnorm(p[1], 0, Inf, valMean, valSD),
+                         valMax=truncnorm::qtruncnorm(p[2], 0, Inf, valMean, valSD)) %>%
+                  select(exposure, valMean, valSD, valMin, valMax),
+                growStipe=stipeGrow.df %>%
+                  mutate(valMean=mn, 
+                         valSD=sd,
+                         valMin=qnorm(p[1], valMean, valSD),
+                         valMax=qnorm(p[2], valMean, valSD)) %>%
+                  select(stage, exposure, valMean, valSD, valMin, valMax),
+                growFrond=frondGrow.df %>%
+                  mutate(valMean=mn, 
+                         valSD=sd,
+                         valMin=qnorm(p[1], valMean, valSD),
+                         valMax=qnorm(p[2], valMean, valSD)) %>%
+                  select(stage, exposure, valMean, valSD, valMin, valMax),
+                loss=erosion.df %>%
+                  mutate(valMean=mn,
+                         valPrec=prec,
+                         valMin=qbeta(p[1], shp1, shp2),
+                         valMax=qbeta(p[2], shp1, shp2)) %>%
+                  select(stage, exposure, valMean, valPrec, valMin, valMax, shp1, shp2),
                 densityEffShape=tibble(valMean=1, valMin=0.5, valMax=1.5)) %>%
-  imap_dfr(., ~.x %>% mutate(param=.y))
-saveRDS(par.rng, glue("{sens.dir}parameter_ranges.rds"))
+  imap_dfr(., ~.x %>% mutate(param=.y)) %>%
+  select(param, stage, exposure, valMean, valSD, valPrec, valMin, valMax, shp1, shp2)
+saveRDS(par.rng, glue("{sens.dir}000_parameter_ranges.rds"))
 
 if(rerun) {
   parSets <- map_dfr(1:pars.sens$nParDraws, 
                      ~par.rng %>% mutate(parDraw=.x, 
                                          val=runif(n(), valMin, valMax))) %>%
     select(parDraw, param, stage, exposure, val) %>%
-    group_by(exposure) %>% group_split()
-  walk2(parSets, c(1:3, "NA"), ~write_csv(.x, glue("{sens.dir}{parSets.f}{.y}.csv")))
+    mutate(exposureNum=case_when(exposure=="low" ~ 1, exposure=="high" ~ 2)) %>%
+    group_by(exposureNum) %>% group_split()
+  walk2(parSets, c(1:2, "NA"), ~write_csv(.x, glue("{sens.dir}{parSets.f}{.y}.csv")))
 }
 
 

@@ -22,6 +22,7 @@ sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 data.dir <- glue("data{sep}raw{sep}digitized{sep}")
 supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
 out.dir <- glue("out{sep}storms{sep}")
+par.dir <- glue("data{sep}")
 
 # switches & settings
 gridRes <- c(0.1, 0.25)[1]
@@ -34,24 +35,18 @@ options(mc.cores=nCores)
 pars.sim <- list(depths=c(2, 5, 10, 15, 20), 
                  tskip=0,
                  nSim=1, 
-                 stochParams=F,
-                 landscape="dynamic")
+                 stochParams=T,
+                 landscape="static")
 
 # load files
-grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg"))
+grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>% 
+  mutate(fetchCat=pmin(fetchCat, 2))
 grid.i <- grid.sf %>% st_drop_geometry() %>%
   rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn) %>%
   select(id, SST, KD, PAR, fetch, fetchCat)
 data.ls <- compileDatasets(data.dir, supp.f)
 lm.fit <- readRDS(glue("data{sep}fits_{gridRes}.rds"))
 lm.mnsd <- readRDS(glue("data{sep}dfs_mn_sd_{gridRes}.rds"))
-surv.df <- data.ls$stageFrom_stageTo %>% 
-  filter(stageTo=="dead") %>%
-  mutate(survRate=1-rate_mn,
-         exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
-fecund.df <- data.ls$stageFrom_stageTo %>% 
-  filter(stageFrom=="canopy" & stageTo=="recruits") %>%
-  mutate(exposure=as.numeric(factor(exposure, levels=c("low", "medium", "high"))))
 
 # set sim length, storm intensity
 pars.sim$tmax <- nrow(data.ls$year_stormIndex)
@@ -94,7 +89,8 @@ if(rerun) {
   
   for(i in 1:nSimGrid) {
     if(pars.sim$landscape=="dynamic") {
-      grid.sim <- readRDS(glue("data{sep}gridSim{sep}gridSim_{gridRes}_{str_pad(i,3,'left','0')}.rds"))
+      grid.sim <- readRDS(glue("data{sep}gridSim{sep}gridSim_{gridRes}_{str_pad(i,3,'left','0')}.rds")) %>% 
+        mutate(fetchCat=pmin(fetchCat, 2))
     } else {
       grid.sim <- NULL
     }
@@ -106,7 +102,7 @@ if(rerun) {
     cat("Starting runs: grid", i, "of", nSimGrid, "\n")
     out.ls <- parLapply(cl, X=1:nrow(grid.i), fun=simDepthsWithinCell,
                         grid.i=grid.i, grid.sim=grid.sim, grid.id=i, gridRes=gridRes,
-                        pars.sim=pars.sim, surv.df=surv.df, fecund.df=fecund.df,
+                        pars.sim=pars.sim, par.dir=par.dir,
                         lm.fit=lm.fit, lm.mnsd=lm.mnsd)
   }
   
