@@ -961,11 +961,11 @@ emulation_summary <- function(resp, brt.dir, siminfo) {
 #' @export
 #'
 #' @examples
-runBRTs <- function(x, pop.f, mass.f, parSets, grid.i, meta.cols, params, 
+runBRTs <- function(x, pop.f=NULL, mass.f, parSets, grid.i, meta.cols, params, 
                     brt.dir, resp=NULL) {
   library(glue); library(tidyverse)
   sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
-  siminfo <- str_remove(str_split_fixed(pop.f[x], "pop_", 2)[,2], ".rds")
+  siminfo <- str_remove(str_split_fixed(mass.f[x], "mass_", 2)[,2], ".rds")
   mass.i <- readRDS(mass.f[x]) %>%
     left_join(., parSets[[3]]) %>%
     left_join(., parSets[[filter(grid.i, id==.$id[1])$fetchCat]]) %>%
