@@ -605,7 +605,7 @@ simulateLandscape <- function(grid.sf, var.sf, nYr, colName) {
 #'
 #' @examples
 simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, grid.id=NA, gridRes, 
-                                pars.sim, surv.df, fecund.df, lm.fit, lm.mnsd) {
+                                pars.sim, surv.df, fecund.df, lm.fit, lm.mnsd, par.dir) {
   library(glue); library(lubridate); library(sf); library(brms)
   library(Matrix); library(tidyverse)
   sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
