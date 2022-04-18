@@ -30,9 +30,9 @@ grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
   select(id, geom, PAR_surface)
 sim.info <- glue("...._{gridRes}")
 pop.f <- dir(out.dir, glue("pop_{sim.info}"), full.names=T)
-pop.df <- map_dfr(pop.f, readRDS) %>% filter(month!=6)
+pop.df <- map_dfr(pop.f, ~readRDS(.x) %>% filter(month!=6 & stage=="canopy"))
 mass.f <- dir(out.dir, glue("mass_{sim.info}"), full.names=T)
-mass.df <- map_dfr(mass.f, readRDS) %>% filter(month!=6)
+mass.df <- map_dfr(mass.f, ~readRDS(.x) %>% filter(month!=6))
 
 
 
