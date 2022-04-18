@@ -36,7 +36,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
                    growFrond=apply(pars$growthRateFrond, 1, function(x) rnorm(pars$tmax, x[1], x[2])))
   } else {
     par.yr <- list(loss=rep(pars$lossRate[1], pars$tmax),
-                   settlement=rep(pars$settlementRate[1], pars$tmax),
+                   settlement=rep(pars$settlementRate$mn[1], pars$tmax),
                    surv=apply(pars$survRate, 1, function(x) rep(x[1], pars$tmax)),
                    growStipeMax=apply(pars$growthRateStipeMax, 1, function(x) rep(x[1], pars$tmax)),
                    growFrond=apply(pars$growthRateFrond, 1, function(x) rep(x[1], pars$tmax)))
