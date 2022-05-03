@@ -119,16 +119,35 @@ ggsave(glue("figs{sep}regr{sep}condEff_7b_{gridRes}.png"), width=9, height=4)
 
 # storm simulations -------------------------------------------------------
 
+gridSim.sum <- readRDS(glue("data{sep}gridSim_{gridRes}.rds")) %>%
+  select(id, grid.id, year, PAR, SST, KD) %>%
+  group_by(id) %>%
+  summarise(SST_mn=mean(SST),
+            PAR_0=mean(PAR),
+            PAR_2=mean(PAR*exp(-KD*2)),
+            PAR_5=mean(PAR*exp(-KD*5)),
+            PAR_10=mean(PAR*exp(-KD*10)),
+            PAR_15=mean(PAR*exp(-KD*15)),
+            PAR_20=mean(PAR*exp(-KD*20))) %>%
+  ungroup %>%
+  pivot_longer(starts_with("PAR_"), names_to="depth", values_to="PAR_atDepth") %>%
+  mutate(depth=as.numeric(str_sub(depth, 5, -1))) %>%
+  full_join(., grid.i %>% select(id, fetch, fetchCat))
+
 pop.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}.rds")) %>% filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2))
 pop.sum <- readRDS(glue("summaries{sep}pop_sum_{gridRes}.rds")) %>% filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2))
 pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
+
 mass.df <- readRDS(glue("summaries{sep}mass_df_{gridRes}.rds")) %>% filter(month!=6) %>% 
-  filter(id > ifelse(gridRes==0.1, 5, 2))
+  filter(id > ifelse(gridRes==0.1, 5, 2)) %>%
+  filter(!stochParams)
 mass.sum <- readRDS(glue("summaries{sep}mass_sum_{gridRes}.rds")) %>% filter(month!=6) %>% 
-  filter(id > ifelse(gridRes==0.1, 5, 2))
+  filter(id > ifelse(gridRes==0.1, 5, 2)) %>%
+  left_join(., gridSim.sum)
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
+
 pop.sum.sf_canopy <- pop.sum.sf %>% filter(stage=="canopy") %>%
   mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
          month=month.name[month])
@@ -230,8 +249,16 @@ pop.sum %>% filter(month==7) %>%
 
 # * biomass ---------------------------------------------------------------
 
+mass.sum %>% 
+  filter(month==7) %>%
+  filter(!stochParams) %>%
+  filter(depth==2) %>%
+  summary
+  
+
 fig_a1 <- mass.sum %>% filter(month==7) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_mn, colour=SST_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_mn, colour=SST_mn)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("SST (°C)", option="C") +
   labs(x=expression(plain(PAR)~(mu*plain(mol)/plain(m)^2/plain(day))),
@@ -239,33 +266,38 @@ fig_a1 <- mass.sum %>% filter(month==7) %>%
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank())
 fig_b1 <- mass.sum %>% filter(month==7) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_sd, colour=SST_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_sd, colour=SST_mn)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("SST (°C)", option="C") +
   labs(y="SD July canopy biomass (kg)") + 
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank())
 fig_c1 <- mass.sum %>% filter(month==7) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_sd/biomass_mn, colour=SST_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_sd/biomass_mn, colour=SST_mn)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("SST (°C)", option="C") +
   labs(x=expression(plain(PAR)~(mu*plain(mol)/plain(m)^2/plain(day))),
        y="CV(July canopy biomass)")
 
 fig_a2 <- mass.sum %>% filter(month==7) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_mn, colour=fetch_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_mn, colour=fetch)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("log(fetch)") +
   theme(axis.title.x=element_blank(), axis.title.y=element_blank(),
         axis.text.x=element_blank(), axis.text.y=element_blank())
 fig_b2 <- mass.sum %>% filter(month==7) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_sd, colour=fetch_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_sd, colour=fetch)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("log(fetch)") +
   theme(axis.title.x=element_blank(), axis.title.y=element_blank(),
         axis.text.x=element_blank(), axis.text.y=element_blank())
 fig_c2 <- mass.sum %>% filter(month==7) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_sd/biomass_mn, colour=fetch_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_sd/biomass_mn, colour=fetch)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("log(fetch)") +
   labs(x=expression(plain(PAR)~(mu*plain(mol)/plain(m)^2/plain(day)))) +
@@ -279,13 +311,14 @@ fig.fetch <- ggarrange(plotlist=list(fig_a2, fig_b2, fig_c2), nrow=3,
                        common.legend=T, legend="bottom", 
                        labels=c("d.", "e.", "f."), label.x=0.85, label.y=0.95)
 fig.sst_fetch <- ggarrange(fig.sst, fig.fetch, widths=c(1, 0.9))
-ggsave(glue("figs{sep}pub{sep}PAR_SST_biomass_Jul.png"), 
+ggsave(glue("figs{sep}pub{sep}PAR_SST_biomass_Jul_stoch.png"), 
        fig.sst_fetch, width=6, height=9, dpi=300)
 
 
 
 fig_a1 <- mass.sum %>% filter(month==1) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_mn, colour=SST_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_mn, colour=SST_mn)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("SST (°C)", option="C") +
   labs(x=expression(plain(PAR)~(mu*plain(mol)/plain(m)^2/plain(day))),
@@ -293,33 +326,38 @@ fig_a1 <- mass.sum %>% filter(month==1) %>%
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank())
 fig_b1 <- mass.sum %>% filter(month==1) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_sd, colour=SST_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_sd, colour=SST_mn)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("SST (°C)", option="C") +
   labs(y="SD January canopy biomass (kg)") + 
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank())
 fig_c1 <- mass.sum %>% filter(month==1) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_sd/biomass_mn, colour=SST_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_sd/biomass_mn, colour=SST_mn)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("SST (°C)", option="C") +
   labs(x=expression(plain(PAR)~(mu*plain(mol)/plain(m)^2/plain(day))),
        y="CV(January canopy biomass)")
 
 fig_a2 <- mass.sum %>% filter(month==1) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_mn, colour=fetch_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_mn, colour=fetch)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("log(fetch)") +
   theme(axis.title.x=element_blank(), axis.title.y=element_blank(),
         axis.text.x=element_blank(), axis.text.y=element_blank())
 fig_b2 <- mass.sum %>% filter(month==1) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_sd, colour=fetch_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_sd, colour=fetch)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("log(fetch)") +
   theme(axis.title.x=element_blank(), axis.title.y=element_blank(),
         axis.text.x=element_blank(), axis.text.y=element_blank())
 fig_c2 <- mass.sum %>% filter(month==1) %>%
-  ggplot(aes(PAR_atDepth_mn, biomass_sd/biomass_mn, colour=fetch_mn)) +
+  filter(stochParams) %>%
+  ggplot(aes(PAR_atDepth, biomass_sd/biomass_mn, colour=fetch)) +
   geom_point(shape=1) + 
   scale_colour_viridis_c("log(fetch)") +
   labs(x=expression(plain(PAR)~(mu*plain(mol)/plain(m)^2/plain(day)))) +
@@ -333,7 +371,7 @@ fig.fetch <- ggarrange(plotlist=list(fig_a2, fig_b2, fig_c2), nrow=3,
                        common.legend=T, legend="bottom", 
                        labels=c("d.", "e.", "f."), label.x=0.85, label.y=0.95)
 fig.sst_fetch <- ggarrange(fig.sst, fig.fetch, widths=c(1, 0.9))
-ggsave(glue("figs{sep}pub{sep}PAR_SST_biomass_Jan.png"), 
+ggsave(glue("figs{sep}pub{sep}PAR_SST_biomass_Jan_stoch.png"), 
        fig.sst_fetch, width=6, height=9, dpi=300)
 
 
@@ -617,13 +655,13 @@ ggsave(glue("figs{sep}storm{sep}eda{sep}map_biomass_CVln_MonDep_Resid.png"), p, 
 # * pub figs --------------------------------------------------------------
 
 fig2a <- map_base.gg +
-  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & landscape=="dynamic"), 
+  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & stochParams==F), 
           colour=NA, aes(fill=logBiomass_mn)) +
   scale_fill_gradient(expression("ln kg/m"^2), low="grey90", high="green4", limits=c(0,NA)) +
   facet_grid(.~depth) + theme(legend.position="right") +
   ggtitle("July canopy biomass mean") + theme_classic()
 fig2b <- map_base.gg +
-  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & landscape=="dynamic"), 
+  geom_sf(data=mass.sum.sf_canopy %>% filter(month=="July" & stochParams==F), 
           colour=NA, aes(fill=logBiomass_sd)) +
   scale_fill_viridis_c(expression("ln kg/m"^2), limits=c(0, NA)) +
   facet_grid(.~depth) + theme(legend.position="right") +
@@ -808,8 +846,8 @@ anim_save(glue("figs{sep}biomass_Jan_{gridRes}.gif"),
 ri.df <- read_csv(glue("{sens.dir}{sep}RelInf_{gridRes}.csv")) %>%
   group_by(response, id, month, depth) %>%
   filter(smp==max(smp), td==max(td))
-stages <- c("Canopy", "Recruits", "Subcanopy")
-stages_ord <- c("Canopy", "Subcanopy", "Recruits")
+stages <- c("canopy", "recruits", "subcanopy")
+stages_ord <- c("canopy", "subcanopy", "recruits")
 sens.param <- tibble(messy=sort(unique(ri.df$var)),
                      full=c("Density shape", 
                             paste("Frond growth:", stages),
@@ -831,6 +869,12 @@ sens.param <- tibble(messy=sort(unique(ri.df$var)),
                             paste0("italic(s[", rev(stages_ord), "])")
                             )))
 
+ri.df %>% group_by(response, var) %>%
+  summarise(mn=round(mean(rel.inf), 3),
+            sd=round(sd(rel.inf), 3)) %>% 
+  arrange(response, desc(mn)) %>%
+  print.AsIs()
+
 ri.df %>%
   filter(var != "growStipe.canopy") %>%
   filter(month=="july") %>%
@@ -847,10 +891,38 @@ ri.df %>%
          param=sens.param$eq[match(var, sens.param$messy)]) %>%
   ggplot(aes(param, md, colour=depth, group=as.factor(depth))) +
   geom_hline(yintercept=0, colour="grey90") +
-  # geom_bar(stat="identity", position="dodge", colour="grey30", size=0.25) +
-  geom_errorbar(aes(ymin=q10, ymax=q90), position=position_dodge(width=0.5), width=0.25) +
-  geom_linerange(aes(ymin=q25, ymax=q75), position=position_dodge(width=0.5), size=1) +
-  geom_point(position=position_dodge(width=0.5)) +
+  geom_errorbar(aes(ymin=q10, ymax=q90), position=position_dodge(width=0.75), width=0.5) +
+  geom_linerange(aes(ymin=q25, ymax=q75), position=position_dodge(width=0.75), size=1) +
+  geom_point(position=position_dodge(width=0.75)) +
+  facet_grid(.~response) + coord_flip() +
+  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
+  scale_x_discrete(labels=scales::parse_format()) +
+  scale_y_continuous(breaks=c(0, 20, 40)) + 
+  theme_classic() +
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"),
+        legend.title=element_text(size=11),
+        axis.text.y=element_text(size=12), 
+        strip.text=element_text(size=11), 
+        plot.title=element_text(size=12)) +
+  labs(y="Relative influence (%)", x="", 
+       title="Canopy biomass sensitivity")
+ggsave(glue("figs{sep}pub{sep}sensitivity_pts_mdAmongCells.png"), width=7, height=5, dpi=300)
+
+ri.df %>%
+  filter(var != "growStipe.canopy") %>%
+  filter(month=="july") %>%
+  group_by(var, month, depth, response) %>%
+  summarise(mn=mean(rel.inf*100),
+            se=sd(rel.inf*100)/sqrt(n())) %>%
+  ungroup %>%
+  mutate(response=factor(response, levels=c("biomass_mn", "biomass_sd"),
+                         labels=c("Mean", "Interannual sd")),
+         depth=as.numeric(str_remove(depth, "m")),
+         param=sens.param$eq[match(var, sens.param$messy)]) %>%
+  ggplot(aes(param, mn, colour=depth, group=as.factor(depth))) +
+  geom_hline(yintercept=0, colour="grey90") +
+  geom_errorbar(aes(ymin=mn-2*se, ymax=mn+2*se), position=position_dodge(width=0.75), width=0.5) +
+  geom_point(position=position_dodge(width=0.75)) +
   facet_grid(.~response) + coord_flip() +
   scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
   scale_x_discrete(labels=scales::parse_format()) +
@@ -893,28 +965,30 @@ ri.df %>%
   filter(var != "growStipe.canopy") %>%
   filter(month=="july") %>%
   right_join(grid.i %>% select(id, fetchCat), by="id") %>%
+  mutate(rel.inf=rel.inf*100) %>%
   group_by(var, month, depth, response, fetchCat) %>%
-  summarise(md=median(rel.inf*100),
-            q10=quantile(rel.inf*100, probs=0.1),
-            q25=quantile(rel.inf*100, probs=0.25),
-            q75=quantile(rel.inf*100, probs=0.75),
-            q90=quantile(rel.inf*100, probs=0.9)) %>%
+  summarise(md=median(rel.inf),
+            q10=quantile(rel.inf, probs=0.1),
+            q25=quantile(rel.inf, probs=0.25),
+            q75=quantile(rel.inf, probs=0.75),
+            q90=quantile(rel.inf, probs=0.9)) %>%
   ungroup %>%
   mutate(response=factor(response, levels=c("biomass_mn", "biomass_sd"),
                          labels=c("Mean", "Interannual sd")),
          depth=as.numeric(str_remove(depth, "m")),
          param=sens.param$eq[match(var, sens.param$messy)],
-         fetchCat=factor(fetchCat, labels=c("Low", "Med", "High"))) %>% 
+         fetchCat=factor(fetchCat, labels=c("Low", "High"))) %>% 
   ggplot(aes(depth, md, colour=fetchCat, fill=fetchCat)) +
   geom_hline(yintercept=0, colour="grey90") +
-  geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.5) + 
+  geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.4) + 
+  geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.3) + 
   geom_point(position=position_dodge(width=0.5)) +
   geom_line() +
   facet_grid(response~param, 
              labeller=labeller(response=label_value, depth=label_value, param=label_parsed)) + 
-  scale_colour_viridis_d("Exposure", option="B", end=0.9) +
-  scale_fill_viridis_d("Exposure", option="B", end=0.9) +
-  scale_x_continuous(breaks=c(0, 10), limits=c(0,16)) +
+  scale_colour_viridis_d("Exposure", option="B", end=0.75) +
+  scale_fill_viridis_d("Exposure", option="B", end=0.75) +
+  scale_x_continuous(breaks=c(0, 5, 10, 15), limits=c(0,16)) +
   scale_y_continuous(breaks=c(0, 25, 50)) + 
   theme_classic() +
   theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"),
@@ -925,6 +999,44 @@ ri.df %>%
   labs(y="Relative influence (%)", x="Depth (m)", 
        title="Canopy biomass sensitivity")
 ggsave(glue("figs{sep}pub{sep}sensitivity_ribbon_mnAmongCells.png"), width=11, height=4, dpi=300)
+
+ri.df %>%
+  filter(var != "growStipe.canopy") %>%
+  filter(month=="july") %>%
+  right_join(grid.i %>% select(id, fetchCat), by="id") %>%
+  mutate(rel.inf=log10(rel.inf*100)) %>%
+  group_by(var, month, depth, response, fetchCat) %>%
+  summarise(md=median(rel.inf),
+            q10=quantile(rel.inf, probs=0.1),
+            q25=quantile(rel.inf, probs=0.25),
+            q75=quantile(rel.inf, probs=0.75),
+            q90=quantile(rel.inf, probs=0.9)) %>%
+  ungroup %>%
+  mutate(response=factor(response, levels=c("biomass_mn", "biomass_sd"),
+                         labels=c("Mean", "Interannual sd")),
+         depth=as.numeric(str_remove(depth, "m")),
+         param=sens.param$eq[match(var, sens.param$messy)],
+         fetchCat=factor(fetchCat, labels=c("Low", "High"))) %>% 
+  ggplot(aes(depth, md, colour=fetchCat, fill=fetchCat)) +
+  geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.4) + 
+  geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.3) + 
+  geom_point(position=position_dodge(width=0.5)) +
+  geom_line() +
+  facet_grid(response~param, 
+             labeller=labeller(response=label_value, depth=label_value, param=label_parsed)) + 
+  scale_colour_viridis_d("Exposure", option="B", end=0.75) +
+  scale_fill_viridis_d("Exposure", option="B", end=0.75) +
+  scale_x_continuous(breaks=c(0, 5, 10, 15), limits=c(0,16)) +
+  # scale_y_continuous(breaks=c(0, 25, 50)) + 
+  theme_classic() +
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"),
+        legend.title=element_text(size=11),
+        axis.text.y=element_text(size=12), 
+        strip.text=element_text(size=11), 
+        plot.title=element_text(size=12)) +
+  labs(y="log10(Relative influence)", x="Depth (m)", 
+       title="Canopy biomass sensitivity")
+ggsave(glue("figs{sep}pub{sep}sensitivity_ribbon_mnAmongCells_logRI.png"), width=11, height=4, dpi=300)
 
 
 
@@ -955,6 +1067,8 @@ ggsave(glue("figs{sep}pub{sep}sensitivity_bar_sdAmongCells.png"), width=7, heigh
 
 
 ri.df %>% filter(month=='july') %>% 
+  filter(depth %in% paste0(c(2, 10), "m")) %>%
+  filter(response=="biomass_mn") %>%
   group_by(var) %>%
   mutate(max_ri=max(rel.inf)) %>%
   ungroup %>%
@@ -966,13 +1080,38 @@ ri.df %>% filter(month=='july') %>%
   left_join(grid.sf, .) %>%
   ggplot(aes(fill=log10(rel.inf*100))) +
   geom_sf(colour=NA) +
-  scale_fill_viridis_c(expression(log[10](RI)), option="cividis", limits=c(NA,2)) +
+  scale_fill_viridis_c(expression(log[10](Rel.~Inf.)), option="cividis", limits=c(NA,2)) +
+  theme_classic() + 
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"),
+        panel.grid=element_blank(),
+        axis.title=element_blank(), axis.text=element_blank()) +
+  scale_x_continuous(breaks=c(-8,0)) +
+  scale_y_continuous(breaks=c(52, 58)) +
+  facet_grid(depth~param, 
+             labeller=labeller(response=label_value, depth=label_value, param=label_parsed))
+ggsave(glue("figs{sep}pub{sep}sensitivity_map_logRI.png"), width=6, height=3.75, dpi=300)
+
+ri.df %>% filter(month=='july') %>% 
+  filter(depth %in% paste0(c(2, 10), "m")) %>%
+  filter(response=="biomass_mn") %>%
+  group_by(var) %>%
+  mutate(max_ri=max(rel.inf)) %>%
+  ungroup %>%
+  filter(max_ri > 0.1) %>%
+  mutate(response=factor(response, levels=c("biomass_mn", "biomass_sd"),
+                         labels=c("Mean", "Interannual sd")),
+         depth=factor(depth, levels=paste0(c(2,5,10,15,20),"m")),
+         param=sens.param$eq[match(var, sens.param$messy)]) %>%
+  left_join(grid.sf, .) %>%
+  ggplot(aes(fill=rel.inf*100)) +
+  geom_sf(colour=NA) +
+  scale_fill_viridis_c("Rel. Inf. (%)", option="cividis") +
   theme_classic() + 
   theme(axis.text=element_blank(),
         legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
-  facet_grid(response*depth~param, 
+  facet_grid(depth~param, 
              labeller=labeller(response=label_value, depth=label_value, param=label_parsed))
-ggsave(glue("figs{sep}pub{sep}sensitivity_map.png"), width=8, height=6, dpi=300)
+ggsave(glue("figs{sep}pub{sep}sensitivity_map_RI.png"), width=6, height=3.75, dpi=300)
 
 
 
@@ -1002,7 +1141,6 @@ ri.df %>%
 
 # storm effects -----------------------------------------------------------
 
-mass_simGrid.df <- read_csv(glue("summaries{sep}mass_simGrid_{gridRes}.csv"))
 
 samp_id <- sample(unique(mass_simGrid.df$id), 4)
 
@@ -1308,41 +1446,33 @@ map_base.gg +
 
 nLags <- 15
 
-# from https://stackoverflow.com/questions/55814028/multiple-lags-with-dplyr
-multijetlag <- function(data, ..., n=10){
-  library(rlang)
-  variable <- enquos(...)
-  
-  indices <- seq_len(n)
-  combos <- crossing(indices, var =as.list(variable))
-  
-  quosures <- map2(combos$indices, combos$var,
-                   ~quo(lag(!!.y, !!.x)) ) %>% 
-    set_names(paste("lag", combos$indices, map_chr(combos$var, quo_text), sep = "_"))
-  mutate( data, !!!quosures )
-  
-}
-
 stormIndexLag <- data.ls$year_stormIndex %>% select(year) %>%
   bind_cols(imap_dfc(setNames(1:nLags, glue("lag_{1:nLags}_strm")), 
                      ~lag(data.ls$year_stormIndex$stormIndex, .x)))
 
+gridSim.df <- readRDS(glue("data{sep}gridSim_{gridRes}.rds")) %>%
+  select(id, grid.id, year, PAR, SST, KD)
+
 mass.df_jul <- mass.df %>% 
   # filter(id < 100) %>%
   filter(month==7) %>% 
-  select(id, grid.id, depth, date, biomass, PAR_atDepth, SST) %>%
-  rename(PAR=PAR_atDepth) %>%
-  mutate(year=year(date)) %>%
+  filter(grid.id < 101) %>%
+  select(id, grid.id, depth, year, date, biomass) %>%
+  left_join(., gridSim.df) %>%
+  mutate(year=year(date),
+         PAR=PAR * exp(-depth * KD)) %>%
   group_by(id, grid.id, depth) %>%
   mutate(biomass=c(scale(biomass)),
          PAR=c(scale(PAR)),
          SST=c(scale(SST))) %>%
   ungroup
+rm(mass.df); rm(gridSim.df); gc()
 lag.df_jul <- mass.df_jul %>% 
   group_by(id, grid.id, depth) %>%
   multijetlag(PAR, SST, n=nLags) %>%
   ungroup %>%
   full_join(stormIndexLag, by="year")
+rm(mass.df_jul); gc()
 b.df_jul <- lag.df_jul %>% group_by(id, grid.id, depth) %>%
   summarise(across(starts_with("lag_"), ~coef(lm(biomass~.x))[2])) %>%
   pivot_longer(starts_with("lag_"), names_to="predictor", values_to="b") %>%
@@ -1364,10 +1494,32 @@ b.sum_jul %>% filter(depth %in% c(2,5,10,15)) %>%
   scale_fill_manual("", values=c("goldenrod", "red4", "grey40")) +
   facet_grid(depth~.) + 
   scale_x_continuous(breaks=c(5, 10, 15)) +
+  scale_y_continuous(breaks=c(-0.5, 0, 0.5)) +
   theme_classic() + theme(legend.position="bottom") +
   labs(x="Lag (years)", 
        y="Effect on biomass\n(standardized slope: median + middle 80%)")
 ggsave(glue("figs{sep}pub{sep}varLagEffects_ribbon.png"), width=3, height=7, dpi=300)
+
+b.sum_jul_fetch <- b.df_jul %>% 
+  right_join(., grid.i %>% select(id, fetchCat)) %>%
+  group_by(lag, depth, fetchCat, covar) %>%
+  summarise(b_mn=mean(b), b_md=median(b),
+            b_q10=quantile(b, probs=0.1),
+            b_q90=quantile(b, probs=0.9))
+b.sum_jul_fetch %>% filter(depth %in% c(2,5,10,15)) %>%
+  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m"))) %>%
+  ggplot(aes(lag, b_md, ymin=b_q10, ymax=b_q90, colour=covar, fill=covar)) +
+  geom_hline(yintercept=0, colour="grey80") +
+  geom_ribbon(alpha=0.3, colour=NA) +
+  geom_line() +
+  scale_colour_manual("", values=c("goldenrod", "red4", "grey40")) +
+  scale_fill_manual("", values=c("goldenrod", "red4", "grey40")) +
+  facet_grid(depth~fetchCat) + 
+  scale_x_continuous(breaks=c(5, 10, 15)) +
+  theme_classic() + theme(legend.position="bottom") +
+  labs(x="Lag (years)", 
+       y="Effect on biomass\n(standardized slope: median + middle 80%)")
+ggsave(glue("figs{sep}pub{sep}varLagEffects_fetch_ribbon.png"), width=3, height=7, dpi=300)
 
 b.sum.id_jul <- b.df_jul %>% group_by(id, depth, covar, lag) %>%
   summarise(b_mn=mean(b), b_md=median(b),
@@ -1510,7 +1662,7 @@ grid.i %>%
   mutate(fetchCat=factor(fetchCat, labels=c("Low", "High"))) %>%
   ggplot(aes(fetch, fill=fetchCat)) + 
   geom_vline(xintercept=fetch_thresh, linetype=2, colour="grey30") +
-  geom_histogram(bins=90) +
+  geom_histogram(bins=80) +
   scale_fill_viridis_d("Exposure\ncategory", option="B", end=0.75) +
   theme_classic() +
   labs(x=expression(log[10](fetch)))
@@ -1548,7 +1700,7 @@ fetch.p <- map_base.gg +
   geom_sf(data=filter(grid.long, predictor=="ln(fetch)"), 
           colour=NA, aes(fill=value)) +
   theme_classic() + scale_fill_viridis_c("", option="B", end=0.9) + 
-  ggtitle("ln(wave fetch)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+  ggtitle(expression(log[10](wave~fetch))) + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
 PAR0.p <- map_base.gg + 
   geom_sf(data=filter(grid.long, predictor=="PAR (surface)"), 
           colour=NA, aes(fill=value)) +
