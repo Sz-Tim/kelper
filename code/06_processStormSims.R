@@ -56,7 +56,7 @@ mass.sum <- mass.df %>%
   summarise(across(any_of(c(x_vars, y_vars)), .names="{.col}_{.fn}", 
                    .fn=list(md=median, mn=mean, sd=sd, min=min, max=max, q90=~quantile(.x, probs=0.9))))
 
-mass.df %>% group_by(id, date, depth) %>%
+mass.df %>% group_by(id, date, depth, stochParams) %>%
   summarise(biomass_mn=mean(biomass), 
             biomass_md=median(biomass),
             biomass_sd=sd(biomass),
