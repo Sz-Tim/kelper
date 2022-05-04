@@ -1749,12 +1749,13 @@ grid.long <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
   rename(PAR=PAR_mn, SST=sstDay_mn, KD=KD_mn) %>%
   mutate(PAR2=PAR*exp(-KD*2), PAR5=PAR*exp(-KD*5), PAR10=PAR*exp(-KD*10),
          PAR15=PAR*exp(-KD*15), PAR20=PAR*exp(-KD*20)) %>%
-  select(id, SST, fetch, PAR, PAR2, PAR5, PAR10, PAR15, PAR20) %>%
-  pivot_longer(2:9, names_to="predictor", values_to="value") %>%
+  select(id, SST, fetch, fetchCat, PAR, PAR2, PAR5, PAR10, PAR15, PAR20) %>%
+  pivot_longer(2:10, names_to="predictor", values_to="value") %>%
   mutate(predictor=factor(predictor, 
-                          levels=c("SST", "fetch", "PAR", "PAR2",
+                          levels=c("SST", "fetch", "fetchCat", "PAR", "PAR2",
                                    "PAR5", "PAR10", "PAR15", "PAR20"),
-                          labels=c("SST (growing season)", "ln(fetch)",
+                          labels=c("SST (growing season)", "ln(fetch)", 
+                                   "Exposure category",
                                    "PAR (surface)", "PAR (2m)", "PAR (5m)",
                                    "PAR (10m)", "PAR (15m)", "PAR (20m)")))
 
@@ -1768,6 +1769,12 @@ fetch.p <- map_base.gg +
           colour=NA, aes(fill=value)) +
   theme_classic() + scale_fill_viridis_c("", option="B", end=0.9) + 
   ggtitle(expression(log[10](wave~fetch))) + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
+fetchCat.p <- map_base.gg + 
+  geom_sf(data=filter(grid.long, predictor=="Exposure category"), 
+          colour=NA, aes(fill=value)) +
+  theme_classic() + 
+  scale_fill_viridis_c("", option="B", end=0.75, guide=guide_legend(), breaks=1:2, labels=c("low", "high")) + 
+  ggtitle("Exposure category") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
 PAR0.p <- map_base.gg + 
   geom_sf(data=filter(grid.long, predictor=="PAR (surface)"), 
           colour=NA, aes(fill=value)) +
@@ -1804,12 +1811,12 @@ PAR20.p <- map_base.gg +
   # theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day))) +
   theme_classic() + scale_fill_viridis_c(expression(mu*plain(mol)/plain(m)^2/plain(day)), limits=c(0, 29)) +
   ggtitle("PAR (20m)") + theme(legend.position="bottom", legend.key.height=unit(0.2, "cm"))
-fig_cov_a <- ggarrange(sst.p, fetch.p, nrow=1)
+fig_cov_a <- ggarrange(sst.p, fetch.p, fetchCat.p, nrow=1)
 fig_cov_b <- ggarrange(PAR0.p, PAR2.p, PAR5.p, PAR10.p, PAR15.p, PAR20.p, nrow=2, ncol=3,
                        common.legend=T, legend="bottom")
 fig_cov_b_alt <- ggarrange(PAR0.p, PAR2.p, PAR5.p, PAR10.p, PAR15.p, PAR20.p, nrow=2, ncol=3,
                        common.legend=F, legend="bottom")
-ggsave(glue("figs{sep}pub{sep}env_a.png"), fig_cov_a, width=6, height=4, dpi=300)
+ggsave(glue("figs{sep}pub{sep}env_a.png"), fig_cov_a, width=7, height=4, dpi=300)
 ggsave(glue("figs{sep}pub{sep}env_b.png"), fig_cov_b, width=7.5, height=8, dpi=300)
 ggsave(glue("figs{sep}pub{sep}env_b_alt.png"), fig_cov_b_alt, width=8.5, height=8, dpi=300)
 
