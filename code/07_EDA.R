@@ -258,7 +258,32 @@ mass.sum %>%
   filter(!stochParams) %>%
   filter(depth==2) %>%
   summary
-  
+
+
+mass.sum %>%
+  filter(month==7) %>% filter(!stochParams) %>% 
+  ungroup %>% 
+  mutate(depth=paste0(depth, "m"),
+         depth=factor(depth, levels=paste0(c(2,5,10,15,20), "m"))) %>%
+  ggplot(aes(biomass_mn, biomass_sd, colour=fetch)) + 
+  scale_colour_viridis_c(option="B") + 
+  geom_point(shape=1, alpha=0.5) + 
+  facet_grid(depth~.) +
+  labs(x=bquote(Biomass~mean~(kg/m^2)), y=bquote(Biomass~interannual~sd~(kg/m^2)))
+ggsave(glue("figs{sep}pub{sep}biomass_mn_sd_byFetch.png"), 
+       width=3.5, height=9, dpi=300)
+mass.sum %>%
+  filter(month==7) %>% filter(!stochParams) %>% 
+  ungroup %>% 
+  mutate(depth=paste0(depth, "m"),
+         depth=factor(depth, levels=paste0(c(2,5,10,15,20), "m"))) %>%
+  ggplot(aes(biomass_mn, biomass_sd/biomass_mn, colour=fetch)) + 
+  scale_colour_viridis_c(option="B") + 
+  geom_point(shape=1, alpha=0.5) + 
+  facet_grid(depth~.) +
+  labs(x=bquote(Biomass~mean~(kg/m^2)), y="Biomass interannual CV")
+ggsave(glue("figs{sep}pub{sep}biomass_mn_CV_byFetch.png"), 
+       width=3.5, height=9, dpi=300)
 
 fig_a1 <- mass.sum %>% filter(month==7) %>%
   filter(stochParams) %>%
