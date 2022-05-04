@@ -1963,7 +1963,8 @@ if(gridFigs) {
 # parameter distributions -------------------------------------------------
 
 # storm effects on survival rates
-par.rng <- readRDS(glue("{sens.dir}000_parameter_ranges.rds"))
+par.rng <- readRDS(glue("{sens.dir}000_parameter_ranges.rds")) %>%
+  mutate(exposure=case_when(exposure=="low"~1, exposure=="high"~2)) 
 surv.rng <- par.rng %>% filter(param=="surv") %>%
   group_by(exposure) %>% group_split()
 loss.rng <- par.rng %>% filter(param=="loss")
@@ -2026,9 +2027,9 @@ ggsave(glue("figs{sep}pub{sep}stormEffect_parameters.png"), width=7, height=2.5,
 
 
 
-fetch_cols <- c("grey50", "black")
+fetch_cols <- c("grey70", "black")
 stage_cols <- c(recruits="#80cdc1", subcanopy="#35978f", canopy="#003c30")
-par.rng <- par.rng %>% mutate(exposureNum=case_when(exposure=="low" ~ 1, exposure=="high" ~ 2))
+par.rng <- par.rng 
 
 # s_recruits
 s_r <- list(xlim=c(0,1), main="Recruit survival rate",
