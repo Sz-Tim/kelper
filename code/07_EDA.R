@@ -1514,13 +1514,15 @@ b.sum_jul <- b.df_jul %>% group_by(lag, depth, covar) %>%
             b_q90=quantile(b, probs=0.9))
 
 b.sum_jul %>% filter(depth %in% c(2,5,10,15)) %>%
-  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m"))) %>%
+  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
+         covar=factor(covar, levels=c("strm", "PAR", "SST"),
+                      labels=c("Storms", "PAR", "SST"))) %>%
   ggplot(aes(lag, b_md, ymin=b_q10, ymax=b_q90, colour=covar, fill=covar)) +
   geom_hline(yintercept=0, colour="grey80") +
   geom_ribbon(alpha=0.3, colour=NA) +
   geom_line() +
-  scale_colour_manual("", values=c("goldenrod", "red4", "grey40")) +
-  scale_fill_manual("", values=c("goldenrod", "red4", "grey40")) +
+  scale_colour_manual("", values=c("grey40", "goldenrod", "red4")) +
+  scale_fill_manual("", values=c("grey40", "goldenrod", "red4")) +
   facet_grid(depth~.) + 
   scale_x_continuous(breaks=c(5, 10, 15)) +
   scale_y_continuous(breaks=c(-0.5, 0, 0.5)) +
@@ -1536,19 +1538,21 @@ b.sum_jul_fetch <- b.df_jul %>%
             b_q10=quantile(b, probs=0.1),
             b_q90=quantile(b, probs=0.9))
 b.sum_jul_fetch %>% filter(depth %in% c(2,5,10,15)) %>%
-  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m"))) %>%
+  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
+         covar=factor(covar, levels=c("strm", "PAR", "SST"),
+                      labels=c("Storms", "PAR", "SST"))) %>%
   ggplot(aes(lag, b_md, ymin=b_q10, ymax=b_q90, colour=covar, fill=covar)) +
   geom_hline(yintercept=0, colour="grey80") +
   geom_ribbon(alpha=0.3, colour=NA) +
   geom_line() +
-  scale_colour_manual("", values=c("goldenrod", "red4", "grey40")) +
-  scale_fill_manual("", values=c("goldenrod", "red4", "grey40")) +
+  scale_colour_manual("", values=c("grey40", "goldenrod", "red4")) +
+  scale_fill_manual("", values=c("grey40", "goldenrod", "red4")) +
   facet_grid(depth~fetchCat) + 
   scale_x_continuous(breaks=c(5, 10, 15)) +
   theme_classic() + theme(legend.position="bottom") +
   labs(x="Lag (years)", 
        y="Effect on biomass\n(standardized slope: median + middle 80%)")
-ggsave(glue("figs{sep}pub{sep}varLagEffects_fetch_ribbon.png"), width=3, height=7, dpi=300)
+ggsave(glue("figs{sep}pub{sep}varLagEffects_fetch_ribbon.png"), width=4, height=7, dpi=300)
 
 b.sum.id_jul <- b.df_jul %>% group_by(id, depth, covar, lag) %>%
   summarise(b_mn=mean(b), b_md=median(b),
@@ -1556,6 +1560,40 @@ b.sum.id_jul <- b.df_jul %>% group_by(id, depth, covar, lag) %>%
             b_q90=quantile(b, probs=0.9)) 
   
 b_rng <- range(b.sum.id_jul$b_md)
+
+b.amplitude <- b.sum.id_jul %>%
+  filter(depth < 15) %>%
+  group_by(covar, id, depth) %>%
+  summarise(b_amplitude=max(b_mn)-min(b_mn)) %>%
+  mutate(depth=factor(paste0(depth, "m"), 
+                      levels=paste0(c(2,5,10,15,20), "m")),
+         covar=factor(covar, levels=c("strm", "PAR", "SST"),
+                      labels=c("Storms", "PAR", "SST"))) %>%
+  full_join(grid.sf, ., by="id")
+
+map_base.gg +
+  geom_sf(data=b.amplitude, aes(fill=b_amplitude), colour=NA) +
+  scale_fill_viridis_c("Effect amplitude", option="inferno", limits=c(0, NA),
+                       guide=guide_colorbar(title.position="top")) + 
+  facet_grid(depth~covar) +
+  theme_classic() +
+  theme(legend.position="bottom", 
+        legend.key.height=unit(0.2, "cm"))
+ggsave(glue("figs{sep}pub{sep}covar_effect_amplitude.png"), 
+       width=4, height=6, dpi=300)
+
+b.amplitude %>% st_drop_geometry() %>%
+  mutate(fetchCat=factor(fetchCat, labels=c("low", "high"))) %>%
+  ggplot(aes(fetch, b_amplitude)) + 
+  geom_point(shape=1, alpha=0.2, size=0.75) + 
+  stat_smooth(method="lm", aes(group=fetchCat, colour=fetchCat)) +
+  scale_colour_viridis_d("Exposure\nlevel", option="B", end=0.75) +
+  facet_grid(depth~covar) + 
+  theme_classic() +
+  labs(x=bquote(log[10](fetch)), y="Effect amplitude")
+ggsave(glue("figs{sep}pub{sep}covar_effect_fetch_amplitude.png"),
+       width=6, height=6, dpi=300)
+
 map_base.gg +  
   geom_sf(data=b.sum.id_jul %>%
             filter(depth %in% c(2,5,10) & lag <=10) %>%
