@@ -134,16 +134,20 @@ gridSim.sum <- readRDS(glue("data{sep}gridSim_{gridRes}.rds")) %>%
   mutate(depth=as.numeric(str_sub(depth, 5, -1))) %>%
   full_join(., grid.i %>% select(id, fetch, fetchCat))
 
-pop.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}.rds")) %>% filter(month!=6) %>% 
+pop.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}.rds")) %>% 
+  filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2))
-pop.sum <- readRDS(glue("summaries{sep}pop_sum_{gridRes}.rds")) %>% filter(month!=6) %>% 
+pop.sum <- readRDS(glue("summaries{sep}pop_sum_{gridRes}.rds")) %>% 
+  filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2))
 pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
 
-mass.df <- readRDS(glue("summaries{sep}mass_df_{gridRes}.rds")) %>% filter(month!=6) %>% 
+mass.df <- readRDS(glue("summaries{sep}mass_df_{gridRes}.rds")) %>% 
+  filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2)) %>%
   filter(!stochParams)
-mass.sum <- readRDS(glue("summaries{sep}mass_sum_{gridRes}.rds")) %>% filter(month!=6) %>% 
+mass.sum <- readRDS(glue("summaries{sep}mass_sum_{gridRes}.rds")) %>% 
+  filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2)) %>%
   left_join(., gridSim.sum)
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
