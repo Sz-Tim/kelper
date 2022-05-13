@@ -704,7 +704,7 @@ simDepthsWithinCell <- function(x, grid.i, grid.sim=NULL, grid.id=NA, gridRes,
 
 
 
-#' Title
+#' Simulate a range of parameters across depths within a cell
 #'
 #' @param x Index for parLapply
 #' @param grid.i Dataframe with row for each grid cell
