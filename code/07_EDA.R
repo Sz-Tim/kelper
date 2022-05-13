@@ -134,23 +134,21 @@ gridSim.sum <- readRDS(glue("data{sep}gridSim_{gridRes}.rds")) %>%
   mutate(depth=as.numeric(str_sub(depth, 5, -1))) %>%
   full_join(., grid.i %>% select(id, fetch, fetchCat))
 
-pop.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}.rds")) %>% 
-  filter(month!=6) %>% 
-  filter(id > ifelse(gridRes==0.1, 5, 2))
-pop.sum <- readRDS(glue("summaries{sep}pop_sum_{gridRes}.rds")) %>% 
-  filter(month!=6) %>% 
-  filter(id > ifelse(gridRes==0.1, 5, 2))
-pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
-
 mass.df <- readRDS(glue("summaries{sep}mass_df_{gridRes}.rds")) %>% 
-  filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2)) %>%
   filter(!stochParams)
 mass.sum <- readRDS(glue("summaries{sep}mass_sum_{gridRes}.rds")) %>% 
-  filter(month!=6) %>% 
   filter(id > ifelse(gridRes==0.1, 5, 2)) %>%
   left_join(., gridSim.sum)
 mass.sum.sf <- full_join(grid.sf, mass.sum, by="id")
+
+Nrcr.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}_recruits.rds")) %>%
+  filter(id > ifelse(gridRes==0.1, 5, 2))
+pop.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}.rds")) %>% 
+  filter(id > ifelse(gridRes==0.1, 5, 2))
+pop.sum <- readRDS(glue("summaries{sep}pop_sum_{gridRes}.rds")) %>% 
+  filter(id > ifelse(gridRes==0.1, 5, 2)) 
+pop.sum.sf <- full_join(grid.sf, pop.sum, by="id")
 
 pop.sum.sf_canopy <- pop.sum.sf %>% filter(stage=="canopy") %>%
   mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
@@ -707,6 +705,61 @@ ggsave(glue("figs{sep}pub{sep}biomass_mn_sd.png"), fig2,
 
 # timeseries --------------------------------------------------------------
 
+mass_simGrid.df <- read_csv(glue("summaries{sep}mass_simGrid_{gridRes}.csv"))
+samp_id <- sample(unique(mass_simGrid.df$id), 4)
+
+mass_simGrid.df %>% filter(id %in% samp_id) %>% 
+  filter(!stochParams) %>%
+  filter(month(date)==7) %>%
+  left_join(., grid.i, by="id") %>%
+  mutate(covar=glue("SST: {round(SST,1)}, PAR: {round(PAR,1)}, ",
+                    "KD: {round(KD,1)}, fetch: {round(fetch,1)}")) %>%
+  ggplot(aes(date, biomass_md, group=depth, colour=depth, fill=depth)) + 
+  # geom_ribbon(aes(ymin=biomass_10, ymax=biomass_90),
+  #             alpha=0.5, colour=NA) +
+  geom_ribbon(aes(ymin=biomass_25, ymax=biomass_75),
+              alpha=0.5, colour=NA) +
+  geom_line() +
+  stat_smooth(data=data.ls$year_stormIndex, 
+              aes(date(paste0(year, "-01-01")), (stormIndex*10+10)),
+              se=F, method="loess", formula=y~x, span=0.5, linetype=2) +
+  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
+  scale_fill_viridis_c("Depth (m)", direction=-1, end=0.95) +
+  scale_x_date(breaks=date(c("1950-01-01", "1975-01-01", "2000-01-01")),
+               date_labels="%Y") +
+  facet_wrap(~covar, ncol=1, dir="h") + theme_classic() + 
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
+  labs(x="", y="Canopy biomass (kg)")
+ggsave("figs/storm/timeseries_biomass.png", width=3, height=8, dpi=200)
+
+mass_simGrid.df %>% filter(id %in% samp_id) %>% 
+  filter(!stochParams) %>%
+  mutate(month=month(date)) %>%
+  ggplot(aes(date, biomass_md, group=depth, colour=depth)) + 
+  geom_line() + 
+  stat_smooth(method="loess", formula=y~x, se=F, span=0.25) +
+  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
+  scale_x_date(breaks=date(c("1950-01-01", "1975-01-01", "2000-01-01")),
+               date_labels="%Y") +
+  facet_grid(id~month) + theme_classic() + 
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
+  labs(y="Mean biomass")
+
+
+mass_simGrid.df %>% filter(id %in% samp_id) %>% 
+  filter(!stochParams) %>%
+  mutate(month=month(date)) %>%
+  ggplot(aes(date, biomass_sd, group=depth, colour=depth)) + 
+  geom_line() + 
+  stat_smooth(method="loess", formula=y~x, se=F, span=0.25) +
+  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
+  scale_x_date(breaks=date(c("1950-01-01", "1975-01-01", "2000-01-01")),
+               date_labels="%Y") +
+  facet_grid(id~month) + theme_classic() + 
+  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
+  labs(y="Biomass sd")
+
+
 samp <- mass.df %>% 
   filter(landscape=="static" & depth==2 & month==1 & year==1) %>%
   group_by(fetchCat) %>%
@@ -1166,311 +1219,6 @@ ri.df %>%
 
 
 
-
-
-# storm effects -----------------------------------------------------------
-
-
-samp_id <- sample(unique(mass_simGrid.df$id), 4)
-
-mass_simGrid.df %>% filter(id %in% samp_id) %>% filter(month(date)==7) %>%
-  left_join(., grid.i, by="id") %>%
-  mutate(covar=glue("SST: {round(SST,1)}, PAR: {round(PAR,1)}, ",
-                    "KD: {round(KD,1)}, fetch: {round(fetch,1)}")) %>%
-  ggplot(aes(date, biomass_md, group=depth, colour=depth, fill=depth)) + 
-  # geom_ribbon(aes(ymin=biomass_10, ymax=biomass_90),
-  #             alpha=0.5, colour=NA) +
-  geom_ribbon(aes(ymin=biomass_25, ymax=biomass_75),
-              alpha=0.5, colour=NA) +
-  geom_line() +
-  stat_smooth(data=data.ls$year_stormIndex, 
-              aes(date(paste0(year, "-01-01")), (stormIndex*10+10)),
-              se=F, method="loess", formula=y~x, span=0.5, linetype=2) +
-  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
-  scale_fill_viridis_c("Depth (m)", direction=-1, end=0.95) +
-  scale_x_date(breaks=date(c("1950-01-01", "1975-01-01", "2000-01-01")),
-               date_labels="%Y") +
-  facet_wrap(~covar, ncol=1, dir="h") + theme_classic() + 
-  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
-  labs(x="", y="Canopy biomass (kg)")
-ggsave("figs/storm/timeseries_biomass.png", width=3, height=8, dpi=200)
-
-mass_simGrid.df %>% filter(id %in% samp_id) %>% mutate(month=month(date)) %>%
-  ggplot(aes(date, biomass_md, group=depth, colour=depth)) + 
-  geom_line() + 
-  stat_smooth(method="loess", formula=y~x, se=F, span=0.25) +
-  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
-  scale_x_date(breaks=date(c("1950-01-01", "1975-01-01", "2000-01-01")),
-               date_labels="%Y") +
-  facet_grid(id~month) + theme_classic() + 
-  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
-  labs(y="Mean biomass")
-
-
-mass_simGrid.df %>% filter(id %in% samp_id) %>% mutate(month=month(date)) %>%
-  ggplot(aes(date, biomass_sd, group=depth, colour=depth)) + 
-  geom_line() + 
-  stat_smooth(method="loess", formula=y~x, se=F, span=0.25) +
-  scale_colour_viridis_c("Depth (m)", direction=-1, end=0.95) +
-  scale_x_date(breaks=date(c("1950-01-01", "1975-01-01", "2000-01-01")),
-               date_labels="%Y") +
-  facet_grid(id~month) + theme_classic() + 
-  theme(legend.position="bottom", legend.key.height=unit(0.2, "cm")) +
-  labs(y="Biomass sd")
-
-
-nLags <- 15
-stormIndexLag <- data.ls$year_stormIndex %>% select(year) %>%
-  bind_cols(imap_dfc(setNames(1:nLags, paste0("lag", 1:nLags)), 
-                     ~lag(data.ls$year_stormIndex$stormIndex, .x)))
-  
-stormLag_md.df <- mass_simGrid.df %>% 
-  left_join(., rbind(stormIndexLag %>%
-                       mutate(date=date(paste0(year, "-01-01"))),
-                     stormIndexLag %>%
-                       mutate(date=date(paste0(year, "-07-01")))) %>%
-              select(date, starts_with("lag"))) %>%
-  mutate(month=month(date)) %>%
-  group_by(id, depth, month) %>%
-  mutate(biomass_md=c(scale(biomass_md))) %>%
-  summarise(across(starts_with("lag"), ~coef(lm(biomass_md~.x))[2], .names="b_{.col}")) %>%
-  ungroup %>%
-  pivot_longer(starts_with("b_"), names_to="lag", values_to="b") %>%
-  mutate(lag=as.numeric(str_remove(lag, "b_lag"))) %>%
-  left_join(grid.sf, .) %>%
-  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
-         month=month.name[month])
-
-b_rng <- range(stormLag_md.df$b)
-map_base.gg +  
-  geom_sf(data=stormLag_md.df %>% 
-            filter(depth %in% paste0(c(2,5,10), "m")) %>%
-            filter(month=="January") %>%
-            filter(lag < 11), 
-          aes(fill=b), colour=NA) +
-  scale_fill_gradient2("Standardized slope", mid="grey99", limits=b_rng) +
-  facet_grid(depth~lag) + 
-  theme_classic() + 
-  ggtitle("Effect of storm severity on median January canopy biomass") +
-  theme(legend.key.height=unit(0.25, "cm"),
-        legend.position="bottom") +
-  guides(fill=guide_colorbar(title.position="top"))
-ggsave(glue("figs{sep}pub{sep}map_stormEffect_md_Jan.png"), width=11, height=6, dpi=300)
-
-map_base.gg +  
-  geom_sf(data=stormLag_md.df %>% 
-            filter(depth %in% paste0(c(2,5,10), "m")) %>%
-            filter(month=="July") %>%
-            filter(lag < 11), 
-          aes(fill=b), colour=NA) +
-  scale_fill_gradient2("Standardized slope", mid="grey99", limits=b_rng) +
-  facet_grid(depth~lag) + 
-  theme_classic() + 
-  ggtitle("Effect of storm severity on median July canopy biomass") +
-  theme(legend.key.height=unit(0.25, "cm"),
-        legend.position="bottom") 
-ggsave(glue("figs{sep}pub{sep}map_stormEffect_md_Jul.png"), width=11, height=6, dpi=300)
-
-stormLag_md.df %>% st_drop_geometry() %>%
-  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
-  group_by(depth, lag, month) %>%
-  summarise(q025=quantile(b, probs=0.025),
-            q10=quantile(b, probs=0.1),
-            q25=quantile(b, probs=0.25),
-            q50=quantile(b, probs=0.5),
-            q75=quantile(b, probs=0.75),
-            q90=quantile(b, probs=0.9),
-            q975=quantile(b, probs=0.975)) %>%
-  ggplot(aes(lag, colour=month)) +
-  geom_hline(yintercept=0, colour="grey80", size=0.25) +
-  geom_linerange(aes(ymin=q025, ymax=q975), size=0.25, position=position_dodge(width=0.6)) +
-  geom_linerange(aes(ymin=q10, ymax=q90), size=0.5, position=position_dodge(width=0.6)) +
-  geom_linerange(aes(ymin=q25, ymax=q75), size=1, position=position_dodge(width=0.6)) +
-  geom_point(aes(y=q50), position=position_dodge(width=0.6), shape=1) +
-  scale_colour_manual("Month", values=c("azure4", "goldenrod3")) +
-  facet_grid(depth~.) +
-  scale_x_continuous(breaks=c(5, 10, 15)) +
-  theme_classic() + theme(legend.position="bottom") +
-  labs(x="Lag (years)", y="Storm severity effect on biomass (standardized slope)")
-ggsave(glue("figs{sep}pub{sep}stormEffect_caterpillar.png"), width=3.5, height=7, dpi=300)
-
-stormLag_md.df %>% st_drop_geometry() %>%
-  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
-  group_by(depth, lag, month) %>%
-  summarise(q025=quantile(b, probs=0.025),
-            q10=quantile(b, probs=0.1),
-            q25=quantile(b, probs=0.25),
-            q50=quantile(b, probs=0.5),
-            q75=quantile(b, probs=0.75),
-            q90=quantile(b, probs=0.9),
-            q975=quantile(b, probs=0.975)) %>%
-  ggplot(aes(lag, colour=month, fill=month)) +
-  geom_hline(yintercept=0, colour="grey80", size=0.25) +
-  # geom_ribbon(aes(ymin=q025, ymax=q975), alpha=0.3, colour=NA) +
-  geom_ribbon(aes(ymin=q10, ymax=q90), alpha=0.3, colour=NA) +
-  # geom_ribbon(aes(ymin=q25, ymax=q75), alpha=0.3, colour=NA) +
-  geom_line(aes(y=q50)) +
-  scale_colour_manual("Month", values=c("azure4", "goldenrod3")) +
-  scale_fill_manual("Month", values=c("azure4", "goldenrod3")) +
-  facet_grid(depth~.) +
-  scale_x_continuous(breaks=c(5, 10, 15)) +
-  theme_classic() + theme(legend.position="bottom") +
-  labs(x="Lag (years)", 
-       y="Storm severity effect on biomass\n(standardized slope: median + middle 80%)")
-ggsave(glue("figs{sep}pub{sep}stormEffect_ribbon.png"), width=3.5, height=7, dpi=300)
-
-# Spaghetti: looks like this is highly dependent on fetch category
-# stormLag_md.df %>% st_drop_geometry() %>%
-#   filter(depth %in% paste0(c(2,5,10,15), "m")) %>% filter(month=="July") %>%
-#   ggplot(aes(lag, b, group=id, colour=factor(fetchCat))) + 
-#   geom_line(alpha=0.1) +
-#   facet_grid(depth~fetchCat) +
-#   scale_colour_brewer(type="qual", palette=2) +
-#   theme_classic() + guides(colour=guide_legend(override.aes=list(alpha=1)))
-
-stormLag_md.df %>% st_drop_geometry() %>%
-  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
-  group_by(depth, lag, month, fetchCat) %>%
-  summarise(q025=quantile(b, probs=0.025),
-            q10=quantile(b, probs=0.1),
-            q25=quantile(b, probs=0.25),
-            q50=quantile(b, probs=0.5),
-            q75=quantile(b, probs=0.75),
-            q90=quantile(b, probs=0.9),
-            q975=quantile(b, probs=0.975)) %>%
-  ggplot(aes(lag, colour=factor(fetchCat))) +
-  geom_hline(yintercept=0, colour="grey80", size=0.25) +
-  geom_linerange(aes(ymin=q025, ymax=q975), size=0.25, position=position_dodge(width=0.6)) +
-  geom_linerange(aes(ymin=q10, ymax=q90), size=0.5, position=position_dodge(width=0.6)) +
-  geom_linerange(aes(ymin=q25, ymax=q75), size=1, position=position_dodge(width=0.6)) +
-  geom_point(aes(y=q50), position=position_dodge(width=0.6), shape=1) +
-  scale_colour_viridis_d("Wave exposure", option="B", end=0.8, labels=c("Low", "Med", "High")) +
-  facet_grid(depth~month) +
-  scale_x_continuous(breaks=c(5, 10, 15)) +
-  theme_classic() + theme(legend.position="bottom") +
-  labs(x="Lag (years)", y="Storm severity effect on biomass (standardized slope)")
-ggsave(glue("figs{sep}pub{sep}stormEffect_fetch_caterpillar.png"), width=4.5, height=7, dpi=300)
-
-
-
-stormLag_md.df %>% st_drop_geometry() %>%
-  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
-  group_by(depth, lag, month, fetchCat) %>%
-  summarise(q025=quantile(b, probs=0.025),
-            q10=quantile(b, probs=0.1),
-            q25=quantile(b, probs=0.25),
-            q50=quantile(b, probs=0.5),
-            q75=quantile(b, probs=0.75),
-            q90=quantile(b, probs=0.9),
-            q975=quantile(b, probs=0.975)) %>%
-  ggplot(aes(lag, fill=factor(fetchCat), colour=factor(fetchCat))) +
-  geom_hline(yintercept=0, colour="grey80", size=0.25) +
-  # geom_ribbon(aes(ymin=q025, ymax=q975), alpha=0.3, colour=NA) +
-  geom_ribbon(aes(ymin=q10, ymax=q90), alpha=0.3, colour=NA) +
-  # geom_ribbon(aes(ymin=q25, ymax=q75), alpha=0.3, colour=NA) +
-  geom_line(aes(y=q50)) +
-  scale_fill_viridis_d("Wave exposure", option="B", end=0.8, labels=c("Low", "Med", "High")) +
-  scale_colour_viridis_d("Wave exposure", option="B", end=0.8, labels=c("Low", "Med", "High")) +
-  facet_grid(depth~month) +
-  scale_x_continuous(breaks=c(5, 10, 15)) +
-  theme_classic() + theme(legend.position="bottom") +
-  labs(x="Lag (years)", 
-       y="Storm severity effect on biomass\n(standardized slope: median + middle 80%)")
-ggsave(glue("figs{sep}pub{sep}stormEffect_fetch_ribbon.png"), width=4.5, height=7, dpi=300)
-
-stormLag_md.df %>% st_drop_geometry() %>%
-  filter(depth %in% paste0(c(2,5,10,15), "m")) %>%
-  group_by(depth, lag, month, fetchCat) %>%
-  summarise(q025=quantile(b, probs=0.025),
-            q10=quantile(b, probs=0.1),
-            q25=quantile(b, probs=0.25),
-            q50=quantile(b, probs=0.5),
-            q75=quantile(b, probs=0.75),
-            q90=quantile(b, probs=0.9),
-            q975=quantile(b, probs=0.975)) %>%
-  ggplot(aes(lag, colour=month, fill=month)) +
-  geom_hline(yintercept=0, colour="grey80", size=0.25) +
-  # geom_ribbon(aes(ymin=q025, ymax=q975), alpha=0.3, colour=NA) +
-  geom_ribbon(aes(ymin=q10, ymax=q90), alpha=0.3, colour=NA) +
-  # geom_ribbon(aes(ymin=q25, ymax=q75), alpha=0.3, colour=NA) +
-  geom_line(aes(y=q50)) +
-  scale_colour_manual("Month", values=c("azure4", "goldenrod3")) +
-  scale_fill_manual("Month", values=c("azure4", "goldenrod3")) +
-  facet_grid(depth~fetchCat) +
-  scale_x_continuous(breaks=c(5, 10, 15)) +
-  theme_classic() + theme(legend.position="bottom") +
-  labs(x="Lag (years)", 
-       y="Storm severity effect on biomass\n(standardized slope: median + middle 80%)")
-ggsave(glue("figs{sep}pub{sep}stormEffect_byFetch_ribbon.png"), width=6, height=7, dpi=300)
-
-
-stormLag_sd.df <- mass_simGrid.df %>%
-  left_join(., rbind(data.ls$year_stormIndex %>%
-                       mutate(date=date(paste0(year, "-01-01")),
-                              stormIndex_lag1=lag(stormIndex, 1),
-                              stormIndex_lag2=lag(stormIndex, 2),
-                              stormIndex_lag3=lag(stormIndex, 3),
-                              stormIndex_lag4=lag(stormIndex, 4),
-                              stormIndex_lag5=lag(stormIndex, 5),
-                              stormIndex_lag6=lag(stormIndex, 6)),
-                     data.ls$year_stormIndex %>%
-                       mutate(date=date(paste0(year, "-07-01")),
-                              stormIndex_lag1=lag(stormIndex, 1),
-                              stormIndex_lag2=lag(stormIndex, 2),
-                              stormIndex_lag3=lag(stormIndex, 3),
-                              stormIndex_lag4=lag(stormIndex, 4),
-                              stormIndex_lag5=lag(stormIndex, 5),
-                              stormIndex_lag6=lag(stormIndex, 6))) %>%
-              select(date, starts_with("stormIndex"))) %>%
-  mutate(month=month(date)) %>%
-  group_by(id, depth, month) %>%
-  mutate(biomass_sd=c(scale(log(biomass_sd)))) %>%
-  summarise(b_lag0=coef(lm(biomass_sd~stormIndex))[2],
-            b_lag1=coef(lm(biomass_sd~stormIndex_lag1))[2],
-            b_lag2=coef(lm(biomass_sd~stormIndex_lag2))[2],
-            b_lag3=coef(lm(biomass_sd~stormIndex_lag3))[2],
-            b_lag4=coef(lm(biomass_sd~stormIndex_lag4))[2],
-            b_lag5=coef(lm(biomass_sd~stormIndex_lag5))[2],
-            b_lag6=coef(lm(biomass_sd~stormIndex_lag6))[2]) %>%
-  ungroup %>%
-  pivot_longer(starts_with("b_lag"), names_to="lag", values_to="b") %>%
-  mutate(lag=paste(str_remove(lag, "b_lag"), "yr")) %>%
-  left_join(grid.sf, .) %>%
-  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")))
-
-b_rng <- range(stormLag_sd.df$b)
-map_base.gg +  
-  geom_sf(data=stormLag_sd.df %>% 
-            filter(depth %in% paste0(c(2,5,10), "m")) %>%
-            filter(month==1), 
-          aes(fill=b), colour=NA) +
-  scale_fill_gradient2(mid="grey99", limits=b_rng) +
-  facet_grid(depth~lag) + 
-  theme_classic() + 
-  ggtitle("Effect of storm severity on sd January canopy biomass") +
-  theme(legend.key.height=unit(0.25, "cm"),
-        legend.position="bottom")
-
-map_base.gg +  
-  geom_sf(data=stormLag_md.df %>% 
-            filter(depth %in% paste0(c(2,5,10), "m")) %>%
-            filter(month==7), 
-          aes(fill=b), colour=NA) +
-  scale_fill_gradient2(mid="grey99", limits=b_rng) +
-  facet_grid(depth~lag) + 
-  theme_classic() + 
-  ggtitle("Effect of storm severity on sd July canopy biomass") +
-  theme(legend.key.height=unit(0.25, "cm"),
-        legend.position="bottom")
-  
-
-
-
-
-
-
-
-
 # lagged effects ----------------------------------------------------------
 
 nLags <- 15
@@ -1482,10 +1230,106 @@ stormIndexLag <- data.ls$year_stormIndex %>% select(year) %>%
 gridSim.df <- readRDS(glue("data{sep}gridSim_{gridRes}.rds")) %>%
   select(id, grid.id, year, PAR, SST, KD)
 
+
+
+# * lag recruits ----------------------------------------------------------
+
+N.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}_recruits.rds")) %>%
+  filter(id > ifelse(gridRes==0.1, 5, 2))
+N.df_jul <- N.df %>%
+  filter(month==7) %>%
+  select(id, grid.id, depth, year, date, N) %>%
+  left_join(., gridSim.df) %>%
+  mutate(year=year(date),
+         PAR=PAR * exp(-depth * KD)) %>%
+  group_by(id, grid.id, depth) %>%
+  mutate(N_rcr=c(scale(log(N+1))),
+         PAR=c(scale(PAR)),
+         SST=c(scale(SST))) %>%
+  ungroup
+rm(N.df); gc()
+lag.df_jul <- N.df_jul %>% 
+  group_by(id, grid.id, depth) %>%
+  multijetlag(PAR, SST, n=nLags) %>%
+  ungroup %>%
+  full_join(stormIndexLag, by="year")
+rm(N.df_jul); gc()
+b.df_jul <- lag.df_jul %>% group_by(id, grid.id, depth) %>%
+  summarise(across(starts_with("lag_"), ~coef(lm(N~.x))[2])) %>%
+  pivot_longer(starts_with("lag_"), names_to="predictor", values_to="b") %>%
+  mutate(lag=as.numeric(str_split_fixed(predictor, "_", 3)[,2]),
+         covar=str_split_fixed(predictor, "_", 3)[,3])
+saveRDS(b.df_jul, "temp\\b_lagEffects_recruits.rds")
+
+
+
+# * lag subcanopy ---------------------------------------------------------
+
+N.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}_subcanopy.rds")) %>%
+  filter(id > ifelse(gridRes==0.1, 5, 2))
+N.df_jul <- N.df %>%
+  filter(month==7) %>%
+  select(id, grid.id, depth, year, date, N) %>%
+  left_join(., gridSim.df) %>%
+  mutate(year=year(date),
+         PAR=PAR * exp(-depth * KD)) %>%
+  group_by(id, grid.id, depth) %>%
+  mutate(N=c(scale(log(N+1))),
+         PAR=c(scale(PAR)),
+         SST=c(scale(SST))) %>%
+  ungroup
+rm(N.df); gc()
+lag.df_jul <- N.df_jul %>% 
+  group_by(id, grid.id, depth) %>%
+  multijetlag(PAR, SST, n=nLags) %>%
+  ungroup %>%
+  full_join(stormIndexLag, by="year")
+rm(N.df_jul); gc()
+b.df_jul <- lag.df_jul %>% group_by(id, grid.id, depth) %>%
+  summarise(across(starts_with("lag_"), ~coef(lm(N~.x))[2])) %>%
+  pivot_longer(starts_with("lag_"), names_to="predictor", values_to="b") %>%
+  mutate(lag=as.numeric(str_split_fixed(predictor, "_", 3)[,2]),
+         covar=str_split_fixed(predictor, "_", 3)[,3])
+saveRDS(b.df_jul, "temp\\b_lagEffects_subcanopy.rds")
+
+
+
+# * lag canopy ------------------------------------------------------------
+
+N.df <- readRDS(glue("summaries{sep}pop_df_{gridRes}_canopy.rds")) %>%
+  filter(id > ifelse(gridRes==0.1, 5, 2)) %>% filter(id < 20)
+N.df_jul <- N.df %>%
+  filter(month==7) %>%
+  select(id, grid.id, depth, year, date, N) %>%
+  left_join(., gridSim.df) %>%
+  mutate(year=year(date),
+         PAR=PAR * exp(-depth * KD)) %>%
+  group_by(id, grid.id, depth) %>%
+  mutate(N=c(scale(log(N+1))),
+         PAR=c(scale(PAR)),
+         SST=c(scale(SST))) %>%
+  ungroup
+rm(N.df); gc()
+lag.df_jul <- N.df_jul %>% 
+  group_by(id, grid.id, depth) %>%
+  multijetlag(PAR, SST, n=nLags) %>%
+  ungroup %>%
+  full_join(stormIndexLag, by="year")
+rm(N.df_jul); gc()
+b.df_jul <- lag.df_jul %>% group_by(id, grid.id, depth) %>%
+  summarise(across(starts_with("lag_"), ~coef(lm(N~.x))[2])) %>%
+  pivot_longer(starts_with("lag_"), names_to="predictor", values_to="b") %>%
+  mutate(lag=as.numeric(str_split_fixed(predictor, "_", 3)[,2]),
+         covar=str_split_fixed(predictor, "_", 3)[,3])
+saveRDS(b.df_jul, "temp\\b_lagEffects_canopy.rds")
+
+
+# * lag mass --------------------------------------------------------------
+
 mass.df_jul <- mass.df %>% 
   # filter(id < 100) %>%
   filter(month==7) %>% 
-  filter(grid.id < 101) %>%
+  filter(grid.id < 100) %>%
   select(id, grid.id, depth, year, date, biomass) %>%
   left_join(., gridSim.df) %>%
   mutate(year=year(date),
@@ -1507,7 +1351,15 @@ b.df_jul <- lag.df_jul %>% group_by(id, grid.id, depth) %>%
   pivot_longer(starts_with("lag_"), names_to="predictor", values_to="b") %>%
   mutate(lag=as.numeric(str_split_fixed(predictor, "_", 3)[,2]),
          covar=str_split_fixed(predictor, "_", 3)[,3])
-saveRDS(b.df_jul, "temp\\b_lagEffects.rds")
+saveRDS(b.df_jul, "temp\\b_lagEffects_biomass.rds")
+
+
+
+
+# * lag plots -------------------------------------------------------------
+
+lag_foc <- c("recruits", "subcanopy", "canopy", "biomass")[4]
+b.df_jul <- readRDS(glue("temp{sep}b_lagEffects_{lag_foc}.rds"))
 b.sum_jul <- b.df_jul %>% group_by(lag, depth, covar) %>%
   summarise(b_mn=mean(b), b_md=median(b),
             b_q10=quantile(b, probs=0.1),
@@ -1528,8 +1380,9 @@ b.sum_jul %>% filter(depth %in% c(2,5,10,15)) %>%
   scale_y_continuous(breaks=c(-0.5, 0, 0.5)) +
   theme_classic() + theme(legend.position="bottom") +
   labs(x="Lag (years)", 
-       y="Effect on biomass\n(standardized slope: median + middle 80%)")
-ggsave(glue("figs{sep}pub{sep}varLagEffects_ribbon.png"), width=3, height=7, dpi=300)
+       y=glue("Effect on {lag_foc}\n(standardized slope: median + middle 80%)"))
+ggsave(glue("figs{sep}pub{sep}varLagEffects_ribbon_{lag_foc}.png"), 
+       width=3, height=7, dpi=300)
 
 b.sum_jul_fetch <- b.df_jul %>% 
   right_join(., grid.i %>% select(id, fetchCat)) %>%
@@ -1551,8 +1404,9 @@ b.sum_jul_fetch %>% filter(depth %in% c(2,5,10,15)) %>%
   scale_x_continuous(breaks=c(5, 10, 15)) +
   theme_classic() + theme(legend.position="bottom") +
   labs(x="Lag (years)", 
-       y="Effect on biomass\n(standardized slope: median + middle 80%)")
-ggsave(glue("figs{sep}pub{sep}varLagEffects_fetch_ribbon.png"), width=4, height=7, dpi=300)
+       y=glue("Effect on {lag_foc}\n(standardized slope: median + middle 80%)"))
+ggsave(glue("figs{sep}pub{sep}varLagEffects_fetch_ribbon_{lag_foc}.png"),
+       width=4, height=7, dpi=300)
 
 b.sum.id_jul <- b.df_jul %>% group_by(id, depth, covar, lag) %>%
   summarise(b_mn=mean(b), b_md=median(b),
@@ -1578,8 +1432,11 @@ map_base.gg +
   facet_grid(depth~covar) +
   theme_classic() +
   theme(legend.position="bottom", 
-        legend.key.height=unit(0.2, "cm"))
-ggsave(glue("figs{sep}pub{sep}covar_effect_amplitude.png"), 
+        legend.key.height=unit(0.2, "cm"),
+        legend.key.width=unit(1.2, "cm"),
+        title=element_text(size=10)) +
+  ggtitle(glue("Interannual fluctuation: {lag_foc}"))
+ggsave(glue("figs{sep}pub{sep}covar_effect_amplitude_{lag_foc}.png"), 
        width=4, height=6, dpi=300)
 
 b.amplitude %>% st_drop_geometry() %>%
@@ -1590,132 +1447,13 @@ b.amplitude %>% st_drop_geometry() %>%
   scale_colour_viridis_d("Exposure\nlevel", option="B", end=0.75) +
   facet_grid(depth~covar) + 
   theme_classic() +
-  labs(x=bquote(log[10](fetch)), y="Effect amplitude")
-ggsave(glue("figs{sep}pub{sep}covar_effect_fetch_amplitude.png"),
+  labs(x=bquote(log[10](fetch)), y="Effect amplitude") +
+  theme(title=element_text(size=10)) +
+  ggtitle(glue("Interannual fluctuation: {lag_foc}"))
+ggsave(glue("figs{sep}pub{sep}covar_effect_fetch_amplitude_{lag_foc}.png"),
        width=6, height=6, dpi=300)
 
-map_base.gg +  
-  geom_sf(data=b.sum.id_jul %>%
-            filter(depth %in% c(2,5,10) & lag <=10) %>%
-            filter(covar=="PAR") %>%
-            mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m"))) %>%
-            full_join(grid.sf, ., by="id"), 
-          aes(fill=b_md), colour=NA) +
-  scale_fill_gradient2("Standardized slope", mid="grey99", limits=b_rng) +
-  facet_grid(depth~lag) + 
-  theme_classic() + 
-  ggtitle("Effect of PAR on median July canopy biomass") +
-  theme(legend.key.height=unit(0.25, "cm"),
-        legend.position="bottom") 
-ggsave(glue("figs{sep}pub{sep}map_PAREffect_md_Jul.png"), width=11, height=6, dpi=300)
 
-map_base.gg +  
-  geom_sf(data=b.sum.id_jul %>%
-            filter(depth %in% c(2,5,10) & lag <= 10) %>%
-            filter(covar=="strm") %>%
-            mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m"))) %>%
-            full_join(grid.sf, ., by="id"), 
-          aes(fill=b_md), colour=NA) +
-  scale_fill_gradient2("Standardized slope", mid="grey99", limits=b_rng) +
-  facet_grid(depth~lag) + 
-  theme_classic() + 
-  ggtitle("Effect of storm intensity on median July canopy biomass") +
-  theme(legend.key.height=unit(0.25, "cm"),
-        legend.position="bottom") 
-ggsave(glue("figs{sep}pub{sep}map_strmEffect_md_Jul.png"), width=11, height=6, dpi=300)
-
-
-
-lag.form <- paste("biomass ~", 
-                  paste("lag_", 1:nLags, "_PAR", sep="", collapse=" + "), "+",
-                  paste("lag_", 1:nLags, "_SST", sep="", collapse=" + "), "+",
-                  paste("lag_", 1:nLags, "_strm", sep="", collapse=" + "), "+",
-                  "(1|id/grid.id)")
-
-library(brms)
-lag.lm <- brm(lag.form, data=lag.df_jul, family="gaussian", iter=1000, chains=4, cores=4)
-library(lme4)
-lag.lm <- lmer(lag.form, data=lag.df_jul)
-
-
-
-
-
-# lagged covariates -------------------------------------------------------
-
-mass.df_jul <- mass.df %>% filter(month==7)
-
-lagPAR.df <- mass.df_jul %>% #filter(id < 100) %>%
-  select(id, grid.id, depth, year, PAR_atDepth, SST, fetch, biomass) %>%
-  group_by(id, grid.id, depth) %>%
-  summarise(b_PAR0=coef(lm(biomass~PAR_atDepth))[2],
-            b_PAR1=coef(lm(biomass~lag(PAR_atDepth, 1)))[2],
-            b_PAR2=coef(lm(biomass~lag(PAR_atDepth, 2)))[2],
-            b_PAR3=coef(lm(biomass~lag(PAR_atDepth, 3)))[2],
-            b_PAR4=coef(lm(biomass~lag(PAR_atDepth, 4)))[2],
-            b_PAR5=coef(lm(biomass~lag(PAR_atDepth, 5)))[2],
-            b_PAR6=coef(lm(biomass~lag(PAR_atDepth, 6)))[2],
-            b_PAR7=coef(lm(biomass~lag(PAR_atDepth, 7)))[2],
-            b_PAR8=coef(lm(biomass~lag(PAR_atDepth, 8)))[2],
-            b_PAR9=coef(lm(biomass~lag(PAR_atDepth, 9)))[2],
-            b_PAR10=coef(lm(biomass~lag(PAR_atDepth, 10)))[2]) %>%
-  ungroup %>%
-  pivot_longer(starts_with("b_"), names_to="lag", values_to="b") %>%
-  mutate(lag=as.numeric(str_remove(lag, "b_PAR"))) %>%
-  group_by(id, depth, lag) %>%
-  summarise(mn_b=mean(b, na.rm=T),
-            sd_b=sd(b, na.rm=T))
-
-lagSST.df <- mass.df_jul %>% #filter(id < 100) %>%
-  select(id, grid.id, depth, year, PAR_atDepth, SST, fetch, biomass) %>%
-  group_by(id, grid.id, depth) %>%
-  summarise(b_PAR0=coef(lm(biomass~SST))[2],
-            b_PAR1=coef(lm(biomass~lag(SST, 1)))[2],
-            b_PAR2=coef(lm(biomass~lag(SST, 2)))[2],
-            b_PAR3=coef(lm(biomass~lag(SST, 3)))[2],
-            b_PAR4=coef(lm(biomass~lag(SST, 4)))[2],
-            b_PAR5=coef(lm(biomass~lag(SST, 5)))[2],
-            b_PAR6=coef(lm(biomass~lag(SST, 6)))[2],
-            b_PAR7=coef(lm(biomass~lag(SST, 7)))[2],
-            b_PAR8=coef(lm(biomass~lag(SST, 8)))[2],
-            b_PAR9=coef(lm(biomass~lag(SST, 9)))[2],
-            b_PAR10=coef(lm(biomass~lag(SST, 10)))[2]) %>%
-  ungroup %>%
-  pivot_longer(starts_with("b_"), names_to="lag", values_to="b") %>%
-  mutate(lag=as.numeric(str_remove(lag, "b_PAR"))) %>%
-  group_by(id, depth, lag) %>%
-  summarise(mn_b=mean(b, na.rm=T),
-            sd_b=sd(b, na.rm=T))
-  
-
-
-ggplot(lagSST.df, aes(x=lag, y=mn_b, group=lag)) + geom_boxplot(outlier.shape=1, outlier.size=0.5)
-ggplot(lagSST.df, aes(x=lag, y=sd_b, group=lag)) + geom_boxplot()
-ggplot(lagPAR.df, aes(x=lag, y=mn_b, group=lag)) + geom_boxplot(outlier.shape=1, outlier.size=0.5)
-ggplot(lagPAR.df, aes(x=lag, y=sd_b, group=lag)) + geom_boxplot()
-  
-
-nLags <- 15
-stormIndexLag <- data.ls$year_stormIndex %>% select(year) %>%
-  bind_cols(imap_dfc(setNames(1:nLags, paste0("lag", 1:nLags)), 
-                     ~lag(data.ls$year_stormIndex$stormIndex, .x)))
-
-stormLag_md.df <- mass_simGrid.df %>% 
-  left_join(., rbind(stormIndexLag %>%
-                       mutate(date=date(paste0(year, "-01-01"))),
-                     stormIndexLag %>%
-                       mutate(date=date(paste0(year, "-07-01")))) %>%
-              select(date, starts_with("lag"))) %>%
-  mutate(month=month(date)) %>%
-  group_by(id, depth, month) %>%
-  mutate(biomass_md=c(scale(biomass_md))) %>%
-  summarise(across(starts_with("lag"), ~coef(lm(biomass_md~.x))[2], .names="b_{.col}")) %>%
-  ungroup %>%
-  pivot_longer(starts_with("b_"), names_to="lag", values_to="b") %>%
-  mutate(lag=as.numeric(str_remove(lag, "b_lag"))) %>%
-  left_join(grid.sf, .) %>%
-  mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
-         month=month.name[month])
 
 
 
