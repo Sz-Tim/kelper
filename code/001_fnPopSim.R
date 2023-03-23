@@ -187,7 +187,7 @@ simulatePopulation <- function(pars, N0=NULL, ndraws=4e3) {
 
 
 
-#' Run Matrix Model Finer (Tom's handover code)
+#' Run Matrix Model Finer (handover code)
 #'
 #' @param inputs Named list of model parameters
 #'

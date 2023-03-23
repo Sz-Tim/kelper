@@ -25,7 +25,7 @@ compileDatasets <- function(data.dir, supp.f=NULL) {
   library(tidyverse)
   
   if(!is.null(supp.f)) {
-    # read in data from Dan Smale -- requires different formatting
+    # read in field data -- requires different formatting
     library(readxl)
     supp.sheets <- excel_sheets(supp.f)[-1]
     supp.sites <- read_xlsx(supp.f, "siteLocations", skip=1) %>%
