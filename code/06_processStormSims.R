@@ -29,8 +29,12 @@ gridRes <- 0.1
 grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
   select(id, geom, PAR_surface)
 sim.info <- glue("...._{gridRes}")
-pop.f <- dir(out.dir, glue("pop_{sim.info}"), full.names=T)
-pop.df <- map_dfr(pop.f, ~readRDS(.x) %>% filter(month!=6 & stage=="canopy"))
+pop.f <- dir(out.dir, glue("pop_{sim.info}"), full.names=T) %>%
+  grep("optPar", ., value=T) %>%
+  grep("_g0", ., value=T)
+pop.df <- map_dfr(pop.f, ~readRDS(.x) %>% 
+                    select(id, grid.id, depth, year, month, date, stage, N) %>%
+                    filter(month!=6 & stage != "recruits"))
 mass.f <- dir(out.dir, glue("mass_{sim.info}"), full.names=T)
 mass.df <- map_dfr(mass.f, ~readRDS(.x) %>% filter(month!=6))
 
@@ -85,7 +89,7 @@ pop.df %>% group_by(id, date, depth, stage) %>%
 
 # save output -------------------------------------------------------------
 
-saveRDS(pop.df, glue("summaries{sep}pop_df_{gridRes}.rds"))
+saveRDS(pop.df, glue("summaries{sep}pop_df_{gridRes}_optPar.rds"))
 saveRDS(mass.df, glue("summaries{sep}mass_df_{gridRes}.rds"))
 saveRDS(pop.sum, glue("summaries{sep}pop_sum_{gridRes}.rds"))
 saveRDS(mass.sum, glue("summaries{sep}mass_sum_{gridRes}.rds"))
