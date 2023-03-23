@@ -20,7 +20,7 @@ sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
 # switches
 PAR_datasource <- c("MODIS", "POWER")[1]
-gridRes <- 0.25 # currently in arc-seconds
+gridRes <- 0.1 # currently in arc-minutes
 
 # directories
 gis.dir <- glue("..{sep}..{sep}00_gis{sep}")
