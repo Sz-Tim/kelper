@@ -2,7 +2,7 @@
 # Process output
 # Tim Szewczyk
 
-# This script processes the output produces in 03_runSimulations.R
+# This script processes the output produced in 05_stormSimulations.R
 
 
 

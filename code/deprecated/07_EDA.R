@@ -1923,11 +1923,11 @@ PAR20.p <- map_base.gg +
 fig_cov_a <- ggarrange(sst.p, fetch.p, fetchCat.p, nrow=1)
 fig_cov_b <- ggarrange(PAR0.p, PAR2.p, PAR5.p, PAR10.p, PAR15.p, PAR20.p, nrow=2, ncol=3,
                        common.legend=T, legend="bottom")
-fig_cov_b_alt <- ggarrange(PAR0.p, PAR2.p, PAR5.p, PAR10.p, PAR15.p, PAR20.p, nrow=2, ncol=3,
+fig_cov_c <- ggarrange(PAR0.p, PAR2.p, PAR5.p, PAR10.p, PAR15.p, PAR20.p, nrow=2, ncol=3,
                        common.legend=F, legend="bottom")
 ggsave(glue("figs{sep}pub{sep}env_a.png"), fig_cov_a, width=7, height=4, dpi=300)
 ggsave(glue("figs{sep}pub{sep}env_b.png"), fig_cov_b, width=7.5, height=8, dpi=300)
-ggsave(glue("figs{sep}pub{sep}env_b_alt.png"), fig_cov_b_alt, width=8.5, height=8, dpi=300)
+ggsave(glue("figs{sep}pub{sep}env_c.png"), fig_cov_c, width=8.5, height=8, dpi=300)
 
 
 

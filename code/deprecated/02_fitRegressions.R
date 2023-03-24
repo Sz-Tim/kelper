@@ -18,12 +18,15 @@ walk(dir("code", "^00.*R", full.names=T), source)
 options(mc.cores=4)
 sep <- ifelse(.Platform$OS.type=="unix", "/", "\\")
 
+# switches
+gridRes <- 0.1
+
 # directories
 data.dir <- glue("data{sep}raw{sep}digitized{sep}")
 supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
 
 # datasets
-grid.sf <- st_read(glue("data{sep}grid_0.1_MODIS.gpkg")) %>%
+grid.sf <- st_read(glue("data{sep}grid_{gridRes}_MODIS.gpkg")) %>%
   rename(SST=sstDay_mn, PAR=PAR_surface, KD=KD_mn)
 covars.ls <- loadCovariates(loadFile=glue("data{sep}covar_ls.rds"))
 data.ls <- compileDatasets(data.dir, supp.f) %>%
@@ -180,11 +183,11 @@ reg.fit$N_canopy.lm <- brm(bf(reg.best$N_canopy.lm[1],
 
 # save output -------------------------------------------------------------
 
-saveRDS(reg.fit, glue("data{sep}fits_0.1.rds"))
-saveRDS(reg.best, glue("data{sep}opt_0.1.rds"))
-saveRDS(dfs.scaled, glue("data{sep}dfs_scaled_0.1.rds"))
-saveRDS(reg.dfs, glue("data{sep}dfs_0.1.rds"))
-saveRDS(reg.dfs_mn_sd, glue("data{sep}dfs_mn_sd_0.1.rds"))
+saveRDS(reg.fit, glue::glue("data{sep}fits_{gridRes}.rds"))
+saveRDS(reg.best, glue::glue("data{sep}opt_{gridRes}.rds"))
+saveRDS(dfs.scaled, glue::glue("data{sep}dfs_scaled_{gridRes}.rds"))
+saveRDS(reg.dfs, glue::glue("data{sep}dfs_{gridRes}.rds"))
+saveRDS(reg.dfs_mn_sd, glue::glue("data{sep}dfs_mn_sd_{gridRes}.rds"))
 
 
 
