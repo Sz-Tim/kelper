@@ -144,8 +144,48 @@ ggsave(glue("{fig.dir}Fig_2.png"),
        width=8, height=5.75, dpi=300)
 
 
-
 # Fig 3 -------------------------------------------------------------------
+
+fig3a <- loss.deciles %>%
+  filter(depth %in% c(2, 5, 10, 15)) %>%
+  mutate(depth_F=factor(depth, levels=c(2, 5, 10, 15)),
+         grp=factor(paste(depth_F, decile))) %>%
+  ggplot(aes(decile, delta_mass/1e3, fill=depth, group=grp)) + 
+  geom_boxplot(size=0.2, outlier.size=0.1, colour="grey30") +
+  # geom_violin(colour="grey30", draw_quantiles=0.5, scale="width", size=0.2) +
+  scale_fill_viridis_c("Depth (m)", direction=-1) +
+  guides(fill=guide_colorbar(reverse=T)) +
+  labs(x="Decile among years", y=expression(paste("Winter detritus (kg/", m^2, ")"))) + 
+  pub_theme +
+  theme(panel.grid.major.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.title.x=element_blank(),
+        # legend.background=element_rect(colour="grey30", size=0.2),
+        legend.position=c(0.15, 0.75),
+        legend.key.width=unit(0.2, "cm"))
+
+fig3b <- loss.deciles %>%
+  filter(depth %in% c(2, 5, 10, 15)) %>%
+  mutate(depth_F=factor(depth, levels=c(2, 5, 10, 15)),
+         grp=factor(paste(depth_F, decile))) %>%
+  ggplot(aes(decile, delta_prop, fill=depth, group=grp)) + 
+  geom_boxplot(size=0.2, outlier.size=0.1, colour="grey30") +
+  # geom_violin(colour="grey30", draw_quantiles=0.5, scale="width", size=0.2) +
+  scale_fill_viridis_c("Depth (m)", direction=-1) +
+  guides(fill=guide_colorbar(reverse=T)) +
+  labs(x="Decile among years", y="Proportion of total detritus within cell") + 
+  pub_theme +
+  theme(panel.grid.major.x=element_blank(),
+        legend.position="none",
+        legend.key.width=unit(0.2, "cm"))
+
+ggsave(glue(fig.dir, "Fig_3.png"), 
+       ggarrange(fig3a, fig3b, ncol=1, labels="auto", heights=c(0.95, 1)), 
+       width=4, height=7, dpi=300)
+
+
+
+# Fig 4 -------------------------------------------------------------------
 
 b.df_biomass %>% filter(depth %in% c(2,5,10,15)) %>%
   mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
@@ -164,48 +204,10 @@ b.df_biomass %>% filter(depth %in% c(2,5,10,15)) %>%
   theme(legend.position="bottom") +
   labs(x="Lag (years)", 
        y=glue("Effect on biomass\n(standardized slope: median + middle 80%)"))
-ggsave(glue("{fig.dir}Fig_3.png"), width=3, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_4.png"), width=3, height=7, dpi=300)
 
 
 
-# Fig 4 -------------------------------------------------------------------
-
-fig4a <- loss.deciles %>%
-  filter(depth %in% c(2, 5, 10, 15)) %>%
-  mutate(depth_F=factor(depth, levels=c(2, 5, 10, 15)),
-         grp=factor(paste(depth_F, decile))) %>%
-  ggplot(aes(decile, delta_mass/1e3, fill=depth, group=grp)) + 
-  geom_boxplot(size=0.2, outlier.size=0.1, colour="grey30") +
-  # geom_violin(colour="grey30", draw_quantiles=0.5, scale="width", size=0.2) +
-  scale_fill_viridis_c("Depth (m)", direction=-1) +
-  guides(fill=guide_colorbar(reverse=T)) +
-  labs(x="Decile among years", y=expression(paste("Winter detritus (kg/", m^2, ")"))) + 
-  pub_theme +
-  theme(panel.grid.major.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.title.x=element_blank(),
-        # legend.background=element_rect(colour="grey30", size=0.2),
-        legend.position=c(0.15, 0.75),
-        legend.key.width=unit(0.2, "cm"))
-
-fig4b <- loss.deciles %>%
-  filter(depth %in% c(2, 5, 10, 15)) %>%
-  mutate(depth_F=factor(depth, levels=c(2, 5, 10, 15)),
-         grp=factor(paste(depth_F, decile))) %>%
-  ggplot(aes(decile, delta_prop, fill=depth, group=grp)) + 
-  geom_boxplot(size=0.2, outlier.size=0.1, colour="grey30") +
-  # geom_violin(colour="grey30", draw_quantiles=0.5, scale="width", size=0.2) +
-  scale_fill_viridis_c("Depth (m)", direction=-1) +
-  guides(fill=guide_colorbar(reverse=T)) +
-  labs(x="Decile among years", y="Proportion of total detritus within cell") + 
-  pub_theme +
-  theme(panel.grid.major.x=element_blank(),
-        legend.position="none",
-        legend.key.width=unit(0.2, "cm"))
-
-ggsave(glue(fig.dir, "Fig_4.png"), 
-       ggarrange(fig4a, fig4b, ncol=1, labels="auto", heights=c(0.95, 1)), 
-       width=4, height=7, dpi=300)
 
 
 # Fig 5 -------------------------------------------------------------------
