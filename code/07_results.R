@@ -21,7 +21,7 @@ data.dir <- glue("data{sep}raw{sep}digitized{sep}")
 supp.f <- glue("data{sep}raw{sep}collab{sep}collab_all.xlsx")
 out.dir <- glue("out{sep}storms{sep}")
 sens.dir <- glue("out{sep}sensitivity{sep}")
-fig.dir <- glue("../drafts/LamHyp_ms/EcologicalModelling/")
+fig.dir <- glue("../drafts/LamHyp_ms/EcologicalModelling/figs/")
 
 # grid and data
 grid.sf <- st_read(glue("data{sep}grid_0.1_MODIS.gpkg")) %>%
@@ -142,6 +142,9 @@ fig2b <- map_base.gg +
 ggsave(glue("{fig.dir}Fig_2.png"), 
        ggarrange(fig2a, fig2b, ncol=1, labels="auto"),
        width=8, height=5.75, dpi=300)
+ggsave(glue("{fig.dir}Fig_2.pdf"), 
+       ggarrange(fig2a, fig2b, ncol=1, labels="auto"),
+       width=8, height=5.75, dpi=300)
 
 
 # Fig 3 -------------------------------------------------------------------
@@ -152,7 +155,6 @@ fig3a <- loss.deciles %>%
          grp=factor(paste(depth_F, decile))) %>%
   ggplot(aes(decile, delta_mass/1e3, fill=depth, group=grp)) + 
   geom_boxplot(size=0.2, outlier.size=0.1, colour="grey30") +
-  # geom_violin(colour="grey30", draw_quantiles=0.5, scale="width", size=0.2) +
   scale_fill_viridis_c("Depth (m)", direction=-1) +
   guides(fill=guide_colorbar(reverse=T)) +
   labs(x="Decile among years", y=expression(paste("Winter detritus (kg/", m^2, ")"))) + 
@@ -160,7 +162,6 @@ fig3a <- loss.deciles %>%
   theme(panel.grid.major.x=element_blank(),
         axis.text.x=element_blank(),
         axis.title.x=element_blank(),
-        # legend.background=element_rect(colour="grey30", size=0.2),
         legend.position=c(0.15, 0.75),
         legend.key.width=unit(0.2, "cm"))
 
@@ -170,7 +171,6 @@ fig3b <- loss.deciles %>%
          grp=factor(paste(depth_F, decile))) %>%
   ggplot(aes(decile, delta_prop, fill=depth, group=grp)) + 
   geom_boxplot(size=0.2, outlier.size=0.1, colour="grey30") +
-  # geom_violin(colour="grey30", draw_quantiles=0.5, scale="width", size=0.2) +
   scale_fill_viridis_c("Depth (m)", direction=-1) +
   guides(fill=guide_colorbar(reverse=T)) +
   labs(x="Decile among years", y="Proportion of total detritus within cell") + 
@@ -182,12 +182,15 @@ fig3b <- loss.deciles %>%
 ggsave(glue(fig.dir, "Fig_3.png"), 
        ggarrange(fig3a, fig3b, ncol=1, labels="auto", heights=c(0.95, 1)), 
        width=4, height=7, dpi=300)
+ggsave(glue(fig.dir, "Fig_3.pdf"), 
+       ggarrange(fig3a, fig3b, ncol=1, labels="auto", heights=c(0.95, 1)), 
+       width=4, height=7, dpi=300)
 
 
 
 # Fig 4 -------------------------------------------------------------------
 
-b.df_biomass %>% filter(depth %in% c(2,5,10,15)) %>%
+fig4 <- b.df_biomass %>% filter(depth %in% c(2,5,10,15)) %>%
   mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
          covar=factor(covar, levels=c("strm", "PAR", "SST"),
                       labels=c("Storms", "PAR", "SST"))) %>%
@@ -204,7 +207,8 @@ b.df_biomass %>% filter(depth %in% c(2,5,10,15)) %>%
   theme(legend.position="bottom") +
   labs(x="Lag (years)", 
        y=glue("Effect on biomass\n(standardized slope: median + middle 80%)"))
-ggsave(glue("{fig.dir}Fig_4.png"), width=3, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_4.png"), fig4, width=3, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_4.pdf"), fig4, width=3, height=7, dpi=300)
 
 
 
@@ -212,7 +216,7 @@ ggsave(glue("{fig.dir}Fig_4.png"), width=3, height=7, dpi=300)
 
 # Fig 5 -------------------------------------------------------------------
 
-ri.df %>%
+fig5 <- ri.df %>%
   filter(var != "growStipe.canopy") %>%
   filter(month=="july") %>%
   group_by(var, month, depth, response) %>%
@@ -243,19 +247,18 @@ ri.df %>%
   pub_theme +
   theme(legend.position=c(0.9, 0.25),
         legend.key.width=unit(0.2, "cm"),
-        # legend.title=element_text(size=11),
-        # axis.text.y=element_text(size=12), 
         strip.text.x=element_text(size=11), 
         strip.text.y=element_text(size=10), 
         plot.title=element_text(size=12)) +
   labs(y="Relative influence (%)", x="", 
        title="Canopy biomass sensitivity")
-ggsave(glue("{fig.dir}Fig_5.png"), width=7, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_5.png"), fig5, width=7, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_5.pdf"), fig5, width=7, height=7, dpi=300)
 
 
 # Fig 6 -------------------------------------------------------------------
 
-ri.df %>% filter(month=='july') %>% 
+fig6 <- ri.df %>% filter(month=='july') %>% 
   filter(depth %in% paste0(c(2, 10), "m")) %>%
   filter(response=="biomass_mn") %>%
   group_by(var) %>%
@@ -279,10 +282,26 @@ ri.df %>% filter(month=='july') %>%
   scale_y_continuous(breaks=c(52, 58)) +
   facet_grid(depth~param, 
              labeller=labeller(response=label_value, depth=label_value, param=label_parsed))
-ggsave(glue("{fig.dir}/Fig_6.png"), width=6, height=3.75, dpi=300)
+ggsave(glue("{fig.dir}/Fig_6.png"), fig6, width=6, height=3.75, dpi=300)
+ggsave(glue("{fig.dir}/Fig_6.pdf"), fig6, width=6, height=3.75, dpi=300)
 
-
-
+ri.df %>% filter(month=='july') %>% 
+  group_by(var) %>%
+  mutate(max_ri=max(rel.inf)) %>%
+  ungroup %>%
+  arrange(response, id, depth, desc(rel.inf)) %>%
+  group_by(response, id, depth) %>%
+  slice_head(n=1) %>%
+  mutate(response=factor(response, levels=c("biomass_mn", "biomass_sd"),
+                         labels=c("Mean", "Interannual sd")),
+         depth=factor(depth, levels=paste0(c(2,5,10,15,20),"m")),
+         param=sens.param$eq[match(var, sens.param$messy)]) %>%
+  left_join(grid.sf, .) %>%
+  ggplot(aes(fill=var)) + 
+  geom_sf(colour=NA) + 
+  scale_fill_manual(values=c("#1b7837", "#a6dba0", "#762a83", "#c2a5cf", "#9970ab")) +
+  pub_theme + 
+  facet_grid(response~depth)
 
 
 
@@ -647,7 +666,7 @@ ggsave(glue("{fig.dir}Fig_A6c.png"), fig_cov_c, width=7.5, height=8, dpi=300)
 
 # * Fig A.7 ---------------------------------------------------------------
 
-fetch_thresh <- 4.02 # bad practice, but based on Pedersen sites
+fetch_thresh <- 4.02 # based on Pedersen sites
 grid.i %>%
   mutate(fetchCat=factor(fetchCat, labels=c("Low", "High"))) %>%
   ggplot(aes(fetch, fill=fetchCat)) + 
