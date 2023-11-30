@@ -120,9 +120,9 @@ grid.long <- st_read("out/processed/grid_long.gpkg")
 
 
 
-# Fig 2 -------------------------------------------------------------------
+# Fig 3 -------------------------------------------------------------------
 
-fig2a <- map_base.gg +
+fig3a <- map_base.gg +
   geom_sf(data=mass.sum.sf_canopy, 
           colour=NA, aes(fill=logBiomass_mn)) +
   scale_fill_gradient(expression("ln kg/m"^2), 
@@ -131,7 +131,7 @@ fig2a <- map_base.gg +
   pub_theme +
   theme(legend.position="right") +
   ggtitle("July canopy biomass mean")
-fig2b <- map_base.gg +
+fig3b <- map_base.gg +
   geom_sf(data=mass.sum.sf_canopy, 
           colour=NA, aes(fill=logBiomass_sd)) +
   scale_fill_viridis_c(expression("ln kg/m"^2), limits=c(0, NA)) +
@@ -139,17 +139,17 @@ fig2b <- map_base.gg +
   pub_theme +
   theme(legend.position="right") +
   ggtitle("July canopy biomass standard deviation among years")
-ggsave(glue("{fig.dir}Fig_2.png"), 
-       ggarrange(fig2a, fig2b, ncol=1, labels="auto"),
+ggsave(glue("{fig.dir}Fig_3.png"), 
+       ggarrange(fig3a, fig3b, ncol=1, labels="auto"),
        width=8, height=5.75, dpi=300)
-ggsave(glue("{fig.dir}Fig_2.pdf"), 
-       ggarrange(fig2a, fig2b, ncol=1, labels="auto"),
+ggsave(glue("{fig.dir}Fig_3.pdf"), 
+       ggarrange(fig3a, fig3b, ncol=1, labels="auto"),
        width=8, height=5.75, dpi=300)
 
 
-# Fig 3 -------------------------------------------------------------------
+# Fig 4 -------------------------------------------------------------------
 
-fig3a <- loss.deciles %>%
+fig4a <- loss.deciles %>%
   filter(depth %in% c(2, 5, 10, 15)) %>%
   mutate(depth_F=factor(depth, levels=c(2, 5, 10, 15)),
          grp=factor(paste(depth_F, decile))) %>%
@@ -165,7 +165,7 @@ fig3a <- loss.deciles %>%
         legend.position=c(0.15, 0.75),
         legend.key.width=unit(0.2, "cm"))
 
-fig3b <- loss.deciles %>%
+fig4b <- loss.deciles %>%
   filter(depth %in% c(2, 5, 10, 15)) %>%
   mutate(depth_F=factor(depth, levels=c(2, 5, 10, 15)),
          grp=factor(paste(depth_F, decile))) %>%
@@ -179,18 +179,18 @@ fig3b <- loss.deciles %>%
         legend.position="none",
         legend.key.width=unit(0.2, "cm"))
 
-ggsave(glue(fig.dir, "Fig_3.png"), 
-       ggarrange(fig3a, fig3b, ncol=1, labels="auto", heights=c(0.95, 1)), 
+ggsave(glue(fig.dir, "Fig_4.png"), 
+       ggarrange(fig4a, fig4b, ncol=1, labels="auto", heights=c(0.95, 1)), 
        width=4, height=7, dpi=300)
-ggsave(glue(fig.dir, "Fig_3.pdf"), 
-       ggarrange(fig3a, fig3b, ncol=1, labels="auto", heights=c(0.95, 1)), 
+ggsave(glue(fig.dir, "Fig_4.pdf"), 
+       ggarrange(fig4a, fig4b, ncol=1, labels="auto", heights=c(0.95, 1)), 
        width=4, height=7, dpi=300)
 
 
 
-# Fig 4 -------------------------------------------------------------------
+# Fig 5 -------------------------------------------------------------------
 
-fig4 <- b.df_biomass %>% filter(depth %in% c(2,5,10,15)) %>%
+fig5 <- b.df_biomass %>% filter(depth %in% c(2,5,10,15)) %>%
   mutate(depth=factor(paste0(depth, "m"), levels=paste0(c(2,5,10,15,20), "m")),
          covar=factor(covar, levels=c("strm", "PAR", "SST"),
                       labels=c("Storms", "PAR", "SST"))) %>%
@@ -207,16 +207,16 @@ fig4 <- b.df_biomass %>% filter(depth %in% c(2,5,10,15)) %>%
   theme(legend.position="bottom") +
   labs(x="Lag (years)", 
        y=glue("Effect on biomass\n(standardized slope: median + middle 80%)"))
-ggsave(glue("{fig.dir}Fig_4.png"), fig4, width=3, height=7, dpi=300)
-ggsave(glue("{fig.dir}Fig_4.pdf"), fig4, width=3, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_5.png"), fig5, width=3, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_5.pdf"), fig5, width=3, height=7, dpi=300)
 
 
 
 
 
-# Fig 5 -------------------------------------------------------------------
+# Fig 6 -------------------------------------------------------------------
 
-fig5 <- ri.df %>%
+fig6 <- ri.df %>%
   filter(var != "growStipe.canopy") %>%
   filter(month=="july") %>%
   group_by(var, month, depth, response) %>%
@@ -252,13 +252,13 @@ fig5 <- ri.df %>%
         plot.title=element_text(size=12)) +
   labs(y="Relative influence (%)", x="", 
        title="Canopy biomass sensitivity")
-ggsave(glue("{fig.dir}Fig_5.png"), fig5, width=7, height=7, dpi=300)
-ggsave(glue("{fig.dir}Fig_5.pdf"), fig5, width=7, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_6.png"), fig6, width=7, height=7, dpi=300)
+ggsave(glue("{fig.dir}Fig_6.pdf"), fig6, width=7, height=7, dpi=300)
 
 
-# Fig 6 -------------------------------------------------------------------
+# Fig 7 -------------------------------------------------------------------
 
-fig6 <- ri.df %>% filter(month=='july') %>% 
+fig7 <- ri.df %>% filter(month=='july') %>% 
   filter(depth %in% paste0(c(2, 10), "m")) %>%
   filter(response=="biomass_mn") %>%
   group_by(var) %>%
@@ -282,8 +282,8 @@ fig6 <- ri.df %>% filter(month=='july') %>%
   scale_y_continuous(breaks=c(52, 58)) +
   facet_grid(depth~param, 
              labeller=labeller(response=label_value, depth=label_value, param=label_parsed))
-ggsave(glue("{fig.dir}/Fig_6.png"), fig6, width=6, height=3.75, dpi=300)
-ggsave(glue("{fig.dir}/Fig_6.pdf"), fig6, width=6, height=3.75, dpi=300)
+ggsave(glue("{fig.dir}/Fig_7.png"), fig7, width=6, height=3.75, dpi=300)
+ggsave(glue("{fig.dir}/Fig_7.pdf"), fig7, width=6, height=3.75, dpi=300)
 
 ri.df %>% filter(month=='july') %>% 
   group_by(var) %>%
@@ -657,7 +657,7 @@ fig_cov_a <- ggarrange(sst.p, fetch.p, fetchCat.p, nrow=1)
 fig_cov_b <- ggarrange(PAR0.p, PAR2.p, PAR5.p, PAR10.p, PAR15.p, PAR20.p, nrow=2, ncol=3,
                        common.legend=T, legend="bottom")
 fig_cov_c <- ggarrange(PAR0.p_, PAR2.p_, PAR5.p_, PAR10.p_, PAR15.p_, PAR20.p_, nrow=2, ncol=3,
-                       common.legend=T, legend="bottom")
+                       common.legend=F, legend="bottom")
 ggsave(glue("{fig.dir}Fig_A6a.png"), fig_cov_a, width=7, height=4, dpi=300)
 ggsave(glue("{fig.dir}Fig_A6b.png"), fig_cov_b, width=7.5, height=8, dpi=300)
 ggsave(glue("{fig.dir}Fig_A6c.png"), fig_cov_c, width=7.5, height=8, dpi=300)
